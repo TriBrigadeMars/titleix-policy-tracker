@@ -85,10 +85,12 @@ xAI (Grok 4.5/4.6). Availability varies by plan and surface; org/enterprise
 admins can gate models via policy.
 
 - Source: https://docs.github.com/en/copilot/reference/ai-models/supported-models
-- Note: DeepSeek models do **not** appear on the current supported-models page,
-  though this app's session tooling lists `deepseek/deepseek-v4.1-flash` as
-  available. Treat the app's model picker as the source of truth for what you
-  can actually select.
+- **Confirmed 2026-09-17:** this user's app model picker is backed by their
+  **OpenRouter** provider configuration (models appear under an OpenRouter
+  section in the picker). `deepseek/deepseek-v4.1-flash` is in their
+  OpenRouter allow-list and is selectable for child sessions. So the flash
+  tier is governed by the user's OpenRouter setup, not GitHub's native model
+  catalog — DeepSeek's absence from the GitHub docs page is not a blocker.
 
 ## 6. Recommended setup for this project
 
@@ -109,9 +111,9 @@ admins can gate models via policy.
 - **`model` property surface coverage**: docs explicitly confirm it for VS
   Code and other IDEs; confirm behavior in CLI and cloud agent empirically
   (create the profile, run `/agent`, check `/usage` for the model used).
-- **DeepSeek availability**: not on the public supported-models list; verify
-  in your plan's model picker before committing to it as the flash model.
-  Gemini Flash / MAI-Code-Flash / Qwen Flash are documented alternatives.
+- ~~**DeepSeek availability**~~: resolved — the picker is OpenRouter-backed
+  and DeepSeek v4.1 Flash is allow-listed. If OpenRouter access ever changes,
+  Gemini Flash / Qwen Flash are documented fallbacks.
 - **MCP server flakiness** (observed this session): the `github-mcp-server`
   tool catalog can go stale; the `gh` CLI is a reliable fallback for GitHub
   operations.
