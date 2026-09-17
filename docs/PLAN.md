@@ -96,10 +96,11 @@ model has exactly one definition.
 ```
 titleix-policy-tracker/
 ├── apps/
-│   └── web/                  # Next.js frontend
-│       ├── app/              # routes: /feed, /item/[id], /alerts, /admin/*
-│       ├── components/
-│       └── lib/              # API client, types (generated from OpenAPI)
+│   └── web/                  # Next.js frontend (src/ dir, per task 002)
+│       └── src/
+│           ├── app/          # routes: /feed, /item/[id], /alerts, /admin/*
+│           ├── components/
+│           └── lib/          # API client, types (generated from OpenAPI)
 ├── crates/
 │   ├── core/                 # domain models, db queries, shared logic
 │   ├── api/                  # Axum HTTP API (REST, OpenAPI via utoipa)
