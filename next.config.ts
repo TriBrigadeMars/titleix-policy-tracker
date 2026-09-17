@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Intentionally minimal for now. Add output: "standalone" when containerizing.
 };
 
 export default nextConfig;

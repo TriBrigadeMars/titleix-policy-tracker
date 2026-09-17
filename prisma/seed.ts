@@ -54,7 +54,7 @@ const JURISDICTIONS = [
   { code: "WV", name: "West Virginia", level: "STATE" },
   { code: "WI", name: "Wisconsin", level: "STATE" },
   { code: "WY", name: "Wyoming", level: "STATE" },
-];
+] as const;
 
 const ISSUE_TAGS = [
   {
@@ -113,29 +113,28 @@ const ISSUE_TAGS = [
     description:
       "Mandatory reporting requirements and anti-retaliation protections.",
   },
-];
+] as const;
 
 async function main() {
-  for (const j of JURISDICTIONS) {
-    await prisma.jurisdiction.upsert({
-      where: { code: j.code },
-      update: {},
-      create: j as { code: string; name: string; level: "FEDERAL" | "STATE" },
-    });
-  }
+  await Promise.all(
+    JURISDICTIONS.map((j) =>
+      prisma.jurisdiction.upsert({
+        where: { code: j.code },
+        update: {},
+        create: j,
+      })
+    )
+  );
 
-  for (const tag of ISSUE_TAGS) {
-    await prisma.issueTag.upsert({
-      where: { slug: tag.slug },
-      update: {},
-      create: tag as {
-        slug: string;
-        label: string;
-        sortOrder: number;
-        description: string;
-      },
-    });
-  }
+  await Promise.all(
+    ISSUE_TAGS.map((tag) =>
+      prisma.issueTag.upsert({
+        where: { slug: tag.slug },
+        update: {},
+        create: tag,
+      })
+    )
+  );
 
   console.log(`Seeded ${JURISDICTIONS.length} jurisdictions and ${ISSUE_TAGS.length} issue tags.`);
 }
