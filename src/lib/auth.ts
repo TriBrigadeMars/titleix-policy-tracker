@@ -9,9 +9,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     async session({ session, user }) {
       if (session.user && user) {
-        (session.user as { id: string; role: string }).id = user.id;
-        (session.user as { id: string; role: string }).role =
-          (user as { role: string }).role;
+        (session.user as Record<string, unknown>).id = user.id;
+        (session.user as Record<string, unknown>).role =
+          (user as Record<string, unknown>).role;
       }
       return session;
     },
