@@ -155,6 +155,7 @@ Include: goal, in-scope files, out-of-scope, schema/API snippets, commands to ru
 1. **Scaffold + lint/ci** — Next.js 15, Prisma, NextAuth.js, shadcn/ui, CI workflow  
 2. **Schema + migrations** — jurisdictions, instruments, tags, notes, users  
 3. **Auth** — Google OAuth, editor role middleware  
+   - 🛡️ **Mandatory review checkpoint:** run `security-review` agent on this PR before merging. Audit OAuth flow, session handling, role middleware, and protected route enforcement. Fix all 🔴/🟠 findings before continuing.
 4. **Federal ingest adapter** — Congress.gov / GovInfo client  
 5. **Instrument admin/editor triage UI** — list, detail, tag, note  
 6. **Heatmap** — 50-state overview with green/yellow/red  
@@ -163,6 +164,16 @@ Include: goal, in-scope files, out-of-scope, schema/API snippets, commands to ru
 9. **Per-state ingest fan-out** — many small PRs, one region/state group at a time  
 
 Parallelize only independent slices (e.g. heatmap UI vs federal ingest) after schema exists.
+
+### Review cadence
+
+| Checkpoint | Trigger | Tool / Method | Scope |
+|---|---|---|---|
+| After PR #3 (Auth) | Before merge | `security-review` agent task | OAuth config, session handling, role middleware, protected routes, secret management |
+| After PR #8 (MVP complete) | Before per-state fan-out | Full codebase audit + `security-review` | Architecture, schema correctness, API client security, UI auth boundaries |
+| Per PR (ongoing) | CI green + frontier spot-check | PR diff review in Copilot App | Scope creep, flash-invented legal conclusions, obvious bugs |
+
+**Skip reviews between** PRs #4–#8 unless a PR touches auth, secrets, or the data model.
 
 ---
 
