@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/db";
-import type { CellNote, Instrument, IssueTag, Jurisdiction } from "@/types";
+import type {
+  CellNote,
+  Instrument,
+  InstrumentStatus,
+  IssueTag,
+  Jurisdiction,
+} from "@/types";
+import type { TriageRelevanceFilter } from "@/lib/search-params";
 import type { Prisma } from "@prisma/client";
 
 export const cellNoteInclude = {
@@ -11,6 +18,15 @@ export const cellNoteInclude = {
 export const instrumentInclude = {
   jurisdiction: true,
   issueTags: { include: { issueTag: true } },
+} satisfies Prisma.InstrumentInclude;
+
+export const instrumentWithNotesInclude = {
+  jurisdiction: true,
+  issueTags: { include: { issueTag: true } },
+  notes: {
+    include: { author: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "desc" },
+  },
 } satisfies Prisma.InstrumentInclude;
 
 function iso(value: Date | null): string | null {
@@ -42,8 +58,18 @@ function toIssueTag(row: {
   };
 }
 
-function toInstrument(
-  row: Prisma.InstrumentGetPayload<{ include: typeof instrumentInclude }>
+export function toInstrument(
+  row: Prisma.InstrumentGetPayload<{ include: typeof instrumentInclude }> & {
+    notes?: {
+      id: string;
+      instrumentId: string;
+      authorId: string;
+      body: string;
+      createdAt: Date;
+      updatedAt: Date;
+      author: { id: string; name: string | null };
+    }[];
+  }
 ): Instrument {
   return {
     id: row.id,
@@ -62,6 +88,15 @@ function toInstrument(
     jurisdiction: toJurisdiction(row.jurisdiction),
     issueTags: row.issueTags.map((link) => ({
       issueTag: toIssueTag(link.issueTag),
+    })),
+    notes: row.notes?.map((n) => ({
+      id: n.id,
+      instrumentId: n.instrumentId,
+      authorId: n.authorId,
+      body: n.body,
+      createdAt: n.createdAt.toISOString(),
+      updatedAt: n.updatedAt.toISOString(),
+      author: { id: n.author.id, name: n.author.name },
     })),
   };
 }
@@ -156,4 +191,71 @@ export async function getCellNotesForComparison(input: {
     include: cellNoteInclude,
   });
   return rows.map(toCellNote);
+}
+
+export function instrumentTriageWhere(input: {
+  jurisdictionId?: string;
+  status?: InstrumentStatus;
+  relevance: TriageRelevanceFilter;
+}): Prisma.InstrumentWhereInput {
+  const where: Prisma.InstrumentWhereInput = {};
+
+  if (input.jurisdictionId) {
+    where.jurisdictionId = input.jurisdictionId;
+  }
+
+  if (input.status) {
+    where.status = input.status;
+  }
+
+  if (input.relevance === "relevant") {
+    where.isTitleIXRelevant = true;
+  } else if (input.relevance === "not_relevant") {
+    where.isTitleIXRelevant = false;
+    where.relevanceConfidence = { not: null };
+  } else if (input.relevance === "unreviewed") {
+    where.isTitleIXRelevant = false;
+    where.relevanceConfidence = null;
+  }
+
+  return where;
+}
+
+export async function getInstrumentsForTriage(input: {
+  jurisdictionCode?: string;
+  status?: InstrumentStatus;
+  relevance: TriageRelevanceFilter;
+  limit?: number;
+}): Promise<Instrument[]> {
+  let jurisdictionId: string | undefined;
+
+  if (input.jurisdictionCode) {
+    const jur = await prisma.jurisdiction.findUnique({
+      where: { code: input.jurisdictionCode },
+      select: { id: true },
+    });
+    if (!jur) return [];
+    jurisdictionId = jur.id;
+  }
+
+  const rows = await prisma.instrument.findMany({
+    where: instrumentTriageWhere({
+      jurisdictionId,
+      status: input.status,
+      relevance: input.relevance,
+    }),
+    include: instrumentWithNotesInclude,
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: input.limit ?? 50,
+  });
+
+  return rows.map(toInstrument);
+}
+
+export async function getInstrumentById(id: string): Promise<Instrument | null> {
+  const row = await prisma.instrument.findUnique({
+    where: { id },
+    include: instrumentWithNotesInclude,
+  });
+  return row ? toInstrument(row) : null;
 }

@@ -3,6 +3,7 @@ import {
   MAX_COMPARISON_JURISDICTIONS,
   parseComparisonQuery,
   parseIdList,
+  parseTriageQuery,
 } from "./search-params";
 
 describe("parseIdList", () => {
@@ -72,6 +73,61 @@ describe("parseComparisonQuery", () => {
       ok: true,
       jurisdictionIds: ["a", "b"],
       issueTagIds: ["t1"],
+    });
+  });
+});
+
+describe("parseTriageQuery", () => {
+  it("uses sensible defaults when no params are provided", () => {
+    expect(parseTriageQuery(new URLSearchParams())).toEqual({
+      jurisdictionCode: undefined,
+      status: undefined,
+      relevance: "unreviewed",
+      limit: 50,
+    });
+  });
+
+  it("parses valid filters", () => {
+    expect(
+      parseTriageQuery(
+        new URLSearchParams({
+          jurisdiction: "CA",
+          status: "PASSED",
+          relevance: "relevant",
+          limit: "25",
+        })
+      )
+    ).toEqual({
+      jurisdictionCode: "CA",
+      status: "PASSED",
+      relevance: "relevant",
+      limit: 25,
+    });
+  });
+
+  it("clamps limit between 1 and MAX_TRIAGE_LIMIT", () => {
+    expect(
+      parseTriageQuery(new URLSearchParams({ limit: "200" })).limit
+    ).toBe(100);
+
+    expect(
+      parseTriageQuery(new URLSearchParams({ limit: "-5" })).limit
+    ).toBe(50);
+  });
+
+  it("ignores invalid status or relevance values and falls back safely", () => {
+    expect(
+      parseTriageQuery(
+        new URLSearchParams({
+          status: "INVALID_STATUS",
+          relevance: "something_else",
+        })
+      )
+    ).toEqual({
+      jurisdictionCode: undefined,
+      status: undefined,
+      relevance: "unreviewed",
+      limit: 50,
     });
   });
 });

@@ -38,6 +38,17 @@ export interface Instrument {
   relevanceConfidence: number | null;
   jurisdiction: Jurisdiction;
   issueTags: { issueTag: IssueTag }[];
+  notes?: InstrumentNote[];
+}
+
+export interface InstrumentNote {
+  id: string;
+  instrumentId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  author: { id: string; name: string | null };
 }
 
 export interface CellNote {

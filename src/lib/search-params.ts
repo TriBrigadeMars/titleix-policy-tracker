@@ -52,3 +52,61 @@ export function parseComparisonQuery(
 
   return { ok: true, jurisdictionIds, issueTagIds };
 }
+
+export const DEFAULT_TRIAGE_LIMIT = 50;
+export const MAX_TRIAGE_LIMIT = 100;
+
+export type TriageRelevanceFilter =
+  | "all"
+  | "unreviewed"
+  | "relevant"
+  | "not_relevant";
+
+export interface TriageQuery {
+  jurisdictionCode?: string;
+  status?: "PROPOSED" | "PASSED" | "EFFECTIVE" | "ENJOINED" | "REPEALED";
+  relevance: TriageRelevanceFilter;
+  limit: number;
+}
+
+const VALID_STATUSES = new Set([
+  "PROPOSED",
+  "PASSED",
+  "EFFECTIVE",
+  "ENJOINED",
+  "REPEALED",
+]);
+
+const VALID_RELEVANCE = new Set([
+  "all",
+  "unreviewed",
+  "relevant",
+  "not_relevant",
+]);
+
+export function parseTriageQuery(searchParams: URLSearchParams): TriageQuery {
+  const rawJurisdiction = searchParams.get("jurisdiction")?.trim();
+  const jurisdictionCode =
+    rawJurisdiction && rawJurisdiction.length <= MAX_ID_LENGTH
+      ? rawJurisdiction
+      : undefined;
+
+  const rawStatus = searchParams.get("status")?.trim().toUpperCase();
+  const status =
+    rawStatus && VALID_STATUSES.has(rawStatus)
+      ? (rawStatus as TriageQuery["status"])
+      : undefined;
+
+  const rawRelevance = searchParams.get("relevance")?.trim().toLowerCase();
+  const relevance: TriageRelevanceFilter =
+    rawRelevance && VALID_RELEVANCE.has(rawRelevance)
+      ? (rawRelevance as TriageRelevanceFilter)
+      : "unreviewed";
+
+  const rawLimit = Number.parseInt(searchParams.get("limit") ?? "", 10);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0
+    ? Math.min(rawLimit, MAX_TRIAGE_LIMIT)
+    : DEFAULT_TRIAGE_LIMIT;
+
+  return { jurisdictionCode, status, relevance, limit };
+}

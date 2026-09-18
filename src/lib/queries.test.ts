@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cellNoteComparisonWhere,
   instrumentComparisonWhere,
+  instrumentTriageWhere,
 } from "./queries";
 
 describe("instrumentComparisonWhere", () => {
@@ -52,6 +53,55 @@ describe("cellNoteComparisonWhere", () => {
     ).toEqual({
       jurisdictionId: { in: ["j1"] },
       issueTagId: { in: ["t1"] },
+    });
+  });
+});
+
+describe("instrumentTriageWhere", () => {
+  it("builds where filter for unreviewed items", () => {
+    expect(
+      instrumentTriageWhere({
+        relevance: "unreviewed",
+      })
+    ).toEqual({
+      isTitleIXRelevant: false,
+      relevanceConfidence: null,
+    });
+  });
+
+  it("builds where filter for relevant items", () => {
+    expect(
+      instrumentTriageWhere({
+        jurisdictionId: "jur_1",
+        status: "PROPOSED",
+        relevance: "relevant",
+      })
+    ).toEqual({
+      jurisdictionId: "jur_1",
+      status: "PROPOSED",
+      isTitleIXRelevant: true,
+    });
+  });
+
+  it("builds where filter for not_relevant items", () => {
+    expect(
+      instrumentTriageWhere({
+        relevance: "not_relevant",
+      })
+    ).toEqual({
+      isTitleIXRelevant: false,
+      relevanceConfidence: { not: null },
+    });
+  });
+
+  it("builds where filter for all items", () => {
+    expect(
+      instrumentTriageWhere({
+        jurisdictionId: "jur_2",
+        relevance: "all",
+      })
+    ).toEqual({
+      jurisdictionId: "jur_2",
     });
   });
 });
