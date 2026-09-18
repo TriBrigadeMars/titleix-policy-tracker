@@ -62,3 +62,12 @@ export interface CellNote {
   issueTag: IssueTag;
   author: { id: string; name: string | null };
 }
+
+export interface HeatmapSummary {
+  jurisdictionId: string;
+  jurisdiction: Jurisdiction;
+  relevantCount: number;
+  pendingCount: number;
+  issueTagCount: number;
+  cellNoteCount: number;
+}

@@ -28,6 +28,12 @@ export async function SiteHeader() {
               >
                 Comparison
               </Link>
+              <Link
+                href="/heatmap"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Heatmap
+              </Link>
               {isEditor && (
                 <Link
                   href="/triage"

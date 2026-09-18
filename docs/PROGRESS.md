@@ -2,7 +2,7 @@
 
 Title IX Policy Tracker is a signed-in Next.js 15 app (App Router, Prisma/Postgres, Auth.js Google OAuth, Tailwind/shadcn) for comparing state and federal law that can affect Title IX.
 
-Honest status: the **read/compare + cell-note write** slice is real and structurally sound. Ingest, triage, heatmap, and admin are not. Treat this as roughly **the first third of the product in ARCHITECTURE.md**, not 55-60%.
+Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, and **50-state heatmap** slices are real and structurally sound. Admin role management and public view are not.
 
 Merged through [PR #6](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/6) on `main`.
 
@@ -71,7 +71,6 @@ That was rejected as a foundation. The replacement rules still apply:
 
 | Gap | Notes |
 |-----|--------|
-| Heatmap | 50-state overview from ARCHITECTURE.md. Not started. |
 | Admin | `ADMIN` equals `EDITOR` in practice. No user-role management. |
 | Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
 | Integration tests | CI applies migrations but tests never hit Postgres. |
@@ -121,12 +120,19 @@ That was rejected as a foundation. The replacement rules still apply:
 - Query layer: `instrumentTriageWhere`, `getInstrumentsForTriage`, and `getInstrumentById` in `src/lib/queries.ts`.
 - Tests: route unit tests for `PATCH /api/instruments/[id]` and `POST`/`DELETE /api/instrument-notes` covering 401/403/400/404, Zod schema validation tests, and query where builder tests.
 
+## 50-State Heatmap
+
+- `src/app/(protected)/heatmap/page.tsx` — RSC page for a national overview visualizing Title IX policy and legislative activity across all 50 states + DC + federal jurisdiction.
+- `src/components/state-heatmap.tsx` — 12×8 positioned grid tile layout representing all 51 jurisdictions with dynamic HSL color-scaling based on Title IX relevance volume, interactive sidebar detail cards, and direct deep-links into the comparison matrix (`/?j=US,{code}`).
+- `src/lib/queries.ts` — `getHeatmapSummaries()` aggregates per-jurisdiction metrics (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) via parallel Prisma queries and in-memory joins without raw SQL or schema migrations.
+- `src/types/index.ts` — `HeatmapSummary` interface exported for clean DTO boundaries.
+- `src/components/site-header.tsx` — "Heatmap" link added to the main navigation for all authenticated users.
+
 ## Suggested next slice
 
-1. Heatmap that consumes the same query layer (50-state overview, do not fetch from the client).
-2. Admin role changes (promote/demote users, ADMIN only).
-3. Postgres integration tests for migrate + upsert ingest.
-4. More ingest adapters (LegiScan, OpenStates) — now just implement
+1. Admin role changes (promote/demote users, ADMIN only).
+2. Postgres integration tests for migrate + upsert ingest.
+3. More ingest adapters (LegiScan, OpenStates) — now just implement
    `IngestAdapter` and add a route; the upsert path is reusable.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
