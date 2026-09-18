@@ -14,7 +14,9 @@ npm install
 
 # Set up environment
 cp .env.example .env
-# Edit .env with your database URL and Google OAuth credentials
+# Edit .env with your database URL and Google OAuth credentials.
+# Ingest API keys (CONGRESS_GOV_API_KEY, OPEN_STATES_API_KEY, LEGISCAN_API_KEY)
+# are optional and only needed to run the admin ingest triggers.
 
 # Generate Prisma client and run migrations
 npm run db:generate
@@ -44,6 +46,21 @@ npm run dev
 ## Architecture
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for domain model, design decisions, and data flow.
+
+## Status
+
+Completed:
+
+- Signed-in comparison matrix with cell notes (read + write)
+- Editor triage and instrument notes
+- 50-state heatmap
+- Admin user-role management
+- Ingest pipeline: Congress.gov federal bills plus LegiScan and OpenStates state bills, behind admin-only trigger routes that upsert on `(jurisdictionId, type, identifier)`
+
+Remaining:
+
+- Public (anonymous) heatmap/matrix view
+- Broader Postgres-backed integration tests for the write paths (cell notes, triage `PATCH`)
 
 ## Status and contributing
 

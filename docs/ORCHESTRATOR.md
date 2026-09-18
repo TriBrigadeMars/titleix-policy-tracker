@@ -2,7 +2,7 @@
 
 Use this when a frontier LLM is finishing the remaining Title IX Policy Tracker work, and when it must hand repetitive slices to a flash subagent.
 
-Read `docs/PROGRESS.md` and `ARCHITECTURE.md` first. The working product is signed-in compare + cell notes. Ingest, triage, heatmap, and admin are done; the remaining product work is Postgres-backed integration tests, additional ingest adapters, and a possible public (anonymous) view.
+Read `docs/PROGRESS.md` and `ARCHITECTURE.md` first. The working product is signed-in compare + cell notes. Ingest (Congress.gov, LegiScan, OpenStates), triage, heatmap, and admin are done; the remaining product work is Postgres-backed integration tests for the write paths and a possible public (anonymous) view.
 
 ## Quality bar (non-negotiable)
 
@@ -61,9 +61,10 @@ Non-negotiable implementation rules:
 - If a change needs weird ifs in an existing flow, stop and reframe.
 
 Finish work in this order unless a later slice is blocked on nothing:
-1. Postgres-backed integration tests for migrate + ingest upsert.
-2. Additional ingest adapters (LegiScan, OpenStates) behind the existing `IngestAdapter`.
-3. Public heatmap/matrix view for anonymous users (new work affecting the sign-in-to-read architecture).
+1. Postgres-backed integration tests for the write paths (cell notes, triage
+   `PATCH`) using the `TEST_DATABASE_URL` gate, alongside the ingest upsert
+   integration test that already shipped.
+2. Public heatmap/matrix view for anonymous users (new work affecting the sign-in-to-read architecture).
 
 PR shape: one vertical slice per PR. Do not mix ingest with heatmap.
 Write tests for authz and validation on every new mutation.
