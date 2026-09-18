@@ -51,9 +51,17 @@ Cell notes are the only mutation.
 
 ### Tests
 
-Vitest, mocked Prisma/auth. Covers roles, cell-note validation, cell-note 401/403/upsert author, comparison query parsing, and typed `where` builders.
+Vitest. Unit tests mock Prisma/auth: roles, cell-note validation, cell-note 401/403/upsert author, comparison query parsing, and typed `where` builders.
 
-No DB-backed integration tests yet.
+`src/lib/ingest/index.integration.test.ts` runs `upsertInstruments` against a
+real Postgres — create-on-first-sight, in-place update, editor-field
+preservation, unknown-jurisdiction skip, `(jurisdictionId, type, identifier)`
+identity, whole-batch rollback on a database error, and the Congress.gov
+mapper→DB path end to end. It is gated on `TEST_DATABASE_URL` and skips when
+unset, so `npm test` still passes without a database; when set, the vitest
+config points `DATABASE_URL` at the same database. CI sets it to the Postgres
+service container, so migrations are now exercised by the tests, not just
+applied.
 
 ## What a thermo-nuclear review already fixed
 
@@ -72,8 +80,8 @@ That was rejected as a foundation. The replacement rules still apply:
 | Gap | Notes |
 |-----|--------|
 | Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
-| Integration tests | CI applies migrations but tests never hit Postgres. |
 | Extra instrument types | `GUIDANCE`, `EXECUTIVE_ORDER`, `COURT_ORDER` need an explicit migration when needed. |
+| Integration test breadth | Only the ingest upsert path is DB-backed. Auth guards, cell-note writes, and the triage `PATCH` still rely on mocked Prisma. |
 
 ## Canonical files (do not fork)
 
@@ -140,9 +148,10 @@ That was rejected as a foundation. The replacement rules still apply:
 
 ## Suggested next slice
 
-1. Postgres integration tests for migrate + upsert ingest.
-2. More ingest adapters (LegiScan, OpenStates) — now just implement
+1. More ingest adapters (LegiScan, OpenStates) — now just implement
    `IngestAdapter` and add a route; the upsert path is reusable.
-3. Public heatmap/matrix view for anonymous users.
+2. Public heatmap/matrix view for anonymous users.
+3. Extend DB-backed integration tests to the write paths (cell notes, triage
+   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
