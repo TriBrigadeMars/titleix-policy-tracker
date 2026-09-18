@@ -45,6 +45,9 @@ npm run dev
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for domain model, design decisions, and data flow.
 
-## Contributing
+## Status and contributing
 
-This project uses an orchestrator + flash worker model. See the architecture doc for the PR stack and review cadence.
+- [docs/PROGRESS.md](./docs/PROGRESS.md) — what has shipped and what has not
+- [docs/ORCHESTRATOR.md](./docs/ORCHESTRATOR.md) — frontier orchestrator prompt, thermo-nuclear quality bar, and the required flash subagent template
+
+This project uses an orchestrator + flash worker model. The orchestrator owns design and review. Flash workers only get fully specified, repetitive tasks.
