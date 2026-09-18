@@ -75,7 +75,7 @@ helpers. They require `jurisdictionIds` (max 8) and never dump the full table.
 
 ## Write Path
 
-Cell notes are the first, and currently the only, mutation in the app.
+Cell notes are the first mutation.
 
 - `PUT /api/cell-notes` upserts the note for a `(jurisdiction, issue tag)` pair,
   which `CellNote` already treats as unique. There is deliberately no separate
@@ -94,6 +94,27 @@ Cell notes are the first, and currently the only, mutation in the app.
   (`@db.VarChar(10000)`). Instruments are unique on
   `(jurisdictionId, type, identifier)` so ingest can upsert instead of
   inventing dedup branches.
+
+## Ingest Path
+
+Machine ingest is the second mutation surface. It does not touch editor-owned
+fields (`isTitleIXRelevant`, `relevanceConfidence`); it only writes
+machine-known fields and `lastCheckedAt`.
+
+- **Adapter interface + upsert** (`src/lib/ingest/index.ts`):
+  `IngestAdapter.fetch()` returns `RawInstrument[]` — a source-agnostic shape.
+  No database access lives in the adapter. `upsertInstruments()` resolves
+  jurisdiction codes to ids in one query, then upserts on
+  `(jurisdictionId, type, identifier)` inside a `$transaction`. On update, sets
+  machine fields + `lastCheckedAt`; does not touch `isTitleIXRelevant` or
+  `relevanceConfidence`.
+- **Congress.gov adapter** (`src/lib/ingest/congress.ts`): fetches federal
+  bills from the Congress.gov v3 API, maps each bill to `RawInstrument` via a
+  pure `mapCongressBills` function. The identifier is
+  `${type}-${number}-${congress}` (e.g. `HR-1234-119`). Status defaults to
+  `PROPOSED`; editors triage.
+- **Trigger** (`POST /api/ingest/congress`): ADMIN-only. Optional `?congress=N`.
+  Requires `CONGRESS_GOV_API_KEY` env var.
 
 The UI only renders edit affordances when the server says the viewer is an
 `EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a
