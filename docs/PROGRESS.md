@@ -4,7 +4,7 @@ Title IX Policy Tracker is a signed-in Next.js 15 app (App Router, Prisma/Postgr
 
 Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, **50-state heatmap**, and **admin user-role management** slices are real and structurally sound. Public view is not.
 
-Merged through [PR #6](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/6) on `main`.
+Merged through [PR #15](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/15) on `main`.
 
 ## What exists
 
