@@ -71,8 +71,6 @@ That was rejected as a foundation. The replacement rules still apply:
 
 | Gap | Notes |
 |-----|--------|
-| Triage UI | No way to set `isTitleIXRelevant`, confidence, or instrument issue tags. |
-| Instrument notes | Model exists. No API or UI. |
 | Heatmap | 50-state overview from ARCHITECTURE.md. Not started. |
 | Admin | `ADMIN` equals `EDITOR` in practice. No user-role management. |
 | Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
@@ -113,13 +111,22 @@ That was rejected as a foundation. The replacement rules still apply:
   mapping (table-driven, 7 cases), route authz (401/403/ADMIN/502/param
   clamping).
 
+## Editor triage & Instrument notes
+
+- `src/app/(protected)/triage/page.tsx` — RSC page for reviewing unreviewed, relevant, and not relevant instruments with bounded filters (`jurisdiction`, `status`, `relevance`, `limit`). Gate checks `EDITOR` role and redirects non-editors.
+- `src/components/triage-dashboard.tsx` & `src/components/instrument-triage-editor.tsx` — client UI for filtering instruments and opening dialog to mark relevance, set confidence, attach issue tags, and create/delete instrument notes.
+- `PATCH /api/instruments/[id]` — EDITOR-only endpoint for setting `isTitleIXRelevant`, `relevanceConfidence`, and atomically synchronizing issue tags (`InstrumentIssueTag` junction).
+- `POST /api/instrument-notes` & `DELETE /api/instrument-notes?id=` — EDITOR-only endpoints for managing `InstrumentNote` records. `authorId` is strictly session-derived (`guard.user.id`).
+- Strict zod schemas in `src/lib/validation.ts`: `instrumentTriageSchema`, `instrumentNoteCreateSchema`.
+- Query layer: `instrumentTriageWhere`, `getInstrumentsForTriage`, and `getInstrumentById` in `src/lib/queries.ts`.
+- Tests: route unit tests for `PATCH /api/instruments/[id]` and `POST`/`DELETE /api/instrument-notes` covering 401/403/400/404, Zod schema validation tests, and query where builder tests.
+
 ## Suggested next slice
 
-1. Editor triage: mark relevance, attach issue tags, write `InstrumentNote`.
-2. Heatmap that consumes the same query layer (do not fetch from the client).
-3. Admin role changes.
-4. Postgres integration tests for migrate + upsert ingest.
-5. More ingest adapters (LegiScan, OpenStates) — now just implement
+1. Heatmap that consumes the same query layer (50-state overview, do not fetch from the client).
+2. Admin role changes (promote/demote users, ADMIN only).
+3. Postgres integration tests for migrate + upsert ingest.
+4. More ingest adapters (LegiScan, OpenStates) — now just implement
    `IngestAdapter` and add a route; the upsert path is reusable.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
