@@ -13,13 +13,22 @@ export interface IssueTag {
   description: string | null;
 }
 
+export type InstrumentType = "BILL" | "STATUTE" | "REGULATION";
+
+export type InstrumentStatus =
+  | "PROPOSED"
+  | "PASSED"
+  | "EFFECTIVE"
+  | "ENJOINED"
+  | "REPEALED";
+
 export interface Instrument {
   id: string;
   jurisdictionId: string;
-  type: "BILL" | "STATUTE" | "REGULATION";
+  type: InstrumentType;
   identifier: string;
   title: string;
-  status: "PROPOSED" | "PASSED" | "EFFECTIVE" | "ENJOINED" | "REPEALED";
+  status: InstrumentStatus;
   introducedAt: string | null;
   passedAt: string | null;
   effectiveAt: string | null;
