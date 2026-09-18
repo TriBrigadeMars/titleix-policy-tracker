@@ -117,7 +117,7 @@ model IssueTag {
 model Instrument {
   id                String           @id @default(cuid())
   jurisdictionId    String           @map("jurisdiction_id")
-  type              InstrumentType   // extensible string — add new types without migration
+  type              InstrumentType   // Prisma enum — adding a value requires a migration
   identifier        String           // bill number, CFR cite, chapter, etc.
   title             String
   status            InstrumentStatus
@@ -136,6 +136,7 @@ model Instrument {
   issueTags      InstrumentIssueTag[]
   notes          InstrumentNote[]
 
+  @@unique([jurisdictionId, type, identifier])
   @@index([jurisdictionId, status])
   @@index([isTitleIXRelevant, status])
   @@index([type])
@@ -200,7 +201,7 @@ model CellNote {
   jurisdictionId String   @map("jurisdiction_id")
   issueTagId     String   @map("issue_tag_id")
   authorId       String   @map("author_id")
-  body           String   @db.Text
+  body           String   @db.VarChar(10000)
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 

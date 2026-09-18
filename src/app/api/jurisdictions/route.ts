@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth-guards";
+import { getJurisdictions } from "@/lib/queries";
 
 export async function GET() {
   const guard = await requireUser();
   if (!guard.ok) return guard.response;
 
-  const jurisdictions = await prisma.jurisdiction.findMany({
-    orderBy: [{ level: "asc" }, { code: "asc" }],
-  });
-
-  return NextResponse.json(jurisdictions);
+  return NextResponse.json(await getJurisdictions());
 }

@@ -1,51 +1,24 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireUser, requireRole } from "@/lib/auth-guards";
-import { parseIdList } from "@/lib/search-params";
+import { parseComparisonQuery } from "@/lib/search-params";
+import {
+  cellNoteInclude,
+  getCellNotesForComparison,
+} from "@/lib/queries";
 import { cellNoteUpsertSchema, formatIssues } from "@/lib/validation";
-
-const NOTE_INCLUDE = {
-  jurisdiction: true,
-  issueTag: true,
-  author: { select: { id: true, name: true } },
-} as const;
-
-/**
- * Detect a Prisma error code without importing the `Prisma` namespace, which is
- * only populated after `prisma generate` has run.
- */
-function isPrismaErrorWithCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === code
-  );
-}
 
 export async function GET(request: Request) {
   const guard = await requireUser();
   if (!guard.ok) return guard.response;
 
-  const { searchParams } = new URL(request.url);
-  const jurisdictionIds = parseIdList(searchParams.get("jurisdictionIds"));
-  const issueTagIds = parseIdList(searchParams.get("issueTagIds"));
-
-  const where: Record<string, unknown> = {};
-
-  if (jurisdictionIds.length > 0) {
-    where.jurisdictionId = { in: jurisdictionIds };
+  const parsed = parseComparisonQuery(new URL(request.url).searchParams);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
-  if (issueTagIds.length > 0) {
-    where.issueTagId = { in: issueTagIds };
-  }
-
-  const cellNotes = await prisma.cellNote.findMany({
-    where,
-    include: NOTE_INCLUDE,
-  });
-
+  const cellNotes = await getCellNotesForComparison(parsed);
   return NextResponse.json(cellNotes);
 }
 
@@ -84,13 +57,15 @@ export async function PUT(request: Request) {
       // authorId is deliberately absent: the cell keeps crediting whoever first
       // wrote it, and updatedAt is what signals a later revision.
       update: { body },
-      include: NOTE_INCLUDE,
+      include: cellNoteInclude,
     });
 
     return NextResponse.json(cellNote);
   } catch (error) {
-    // P2003: foreign key violation, i.e. an id that does not exist.
-    if (isPrismaErrorWithCode(error, "P2003")) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2003"
+    ) {
       return NextResponse.json(
         { error: "Unknown jurisdiction or issue tag" },
         { status: 400 }

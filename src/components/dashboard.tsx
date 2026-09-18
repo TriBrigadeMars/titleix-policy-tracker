@@ -1,34 +1,50 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { JurisdictionSelector } from "@/components/jurisdiction-selector";
 import { ComparisonMatrix } from "@/components/comparison-matrix";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Jurisdiction } from "@/types";
+import type { CellNote, Instrument, IssueTag, Jurisdiction } from "@/types";
 
 /**
- * Client half of the dashboard. `canEdit` is resolved on the server from the
- * session and only decides whether edit affordances render; the API guard is
- * what actually authorizes a write.
+ * Client half of the dashboard. Selection is mirrored into `?j=` so the server
+ * page can load comparison data. `canEdit` only decides whether edit
+ * affordances render; the API guard authorizes writes.
  */
-export function Dashboard({ canEdit }: { canEdit: boolean }) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [jurisdictionCodes, setJurisdictionCodes] = useState<
-    Record<string, string>
-  >({});
+export function Dashboard({
+  canEdit,
+  jurisdictions,
+  selectedCodes,
+  issueTags,
+  instruments,
+  cellNotes,
+}: {
+  canEdit: boolean;
+  jurisdictions: Jurisdiction[];
+  selectedCodes: string[];
+  issueTags: IssueTag[];
+  instruments: Instrument[];
+  cellNotes: CellNote[];
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [selected, setSelected] = useState(selectedCodes);
 
   useEffect(() => {
-    fetch("/api/jurisdictions")
-      .then((res) => res.json())
-      .then((data: Jurisdiction[]) => {
-        const codes: Record<string, string> = {};
-        data.forEach((j) => {
-          codes[j.id] = j.code;
-        });
-        setJurisdictionCodes(codes);
-      })
-      .catch(console.error);
-  }, []);
+    setSelected(selectedCodes);
+  }, [selectedCodes]);
+
+  function onChange(codes: string[]) {
+    setSelected(codes);
+    startTransition(() => {
+      router.replace(codes.length > 0 ? `/?j=${codes.join(",")}` : "/");
+    });
+  }
+
+  const selectedJurisdictions = selected
+    .map((code) => jurisdictions.find((j) => j.code === code))
+    .filter((j): j is Jurisdiction => j != null);
 
   return (
     <main className="container mx-auto py-8 px-4">
@@ -44,8 +60,9 @@ export function Dashboard({ canEdit }: { canEdit: boolean }) {
         </CardHeader>
         <CardContent>
           <JurisdictionSelector
-            selected={selectedIds}
-            onChange={setSelectedIds}
+            jurisdictions={jurisdictions}
+            selected={selected}
+            onChange={onChange}
           />
         </CardContent>
       </Card>
@@ -56,9 +73,12 @@ export function Dashboard({ canEdit }: { canEdit: boolean }) {
         </CardHeader>
         <CardContent>
           <ComparisonMatrix
-            jurisdictionIds={selectedIds}
-            jurisdictionCodes={jurisdictionCodes}
+            jurisdictions={selectedJurisdictions}
+            issueTags={issueTags}
+            instruments={instruments}
+            cellNotes={cellNotes}
             canEdit={canEdit}
+            isPending={isPending}
           />
         </CardContent>
       </Card>
