@@ -8,27 +8,6 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(request: Request, context: RouteContext) {
-  const guard = await requireRole("ADMIN");
-  if (!guard.ok) return guard.response;
-
-  const { id } = await context.params;
-  if (!id) {
-    return NextResponse.json({ error: "Missing user id" }, { status: 400 });
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { id },
-    select: userSummarySelect,
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(toUserSummary(user));
-}
-
 export async function PATCH(request: Request, context: RouteContext) {
   const guard = await requireRole("ADMIN");
   if (!guard.ok) return guard.response;

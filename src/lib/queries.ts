@@ -10,6 +10,7 @@ import type {
 } from "@/types";
 import type { UserRole } from "@/lib/roles";
 import type { TriageRelevanceFilter, UserListQuery } from "@/lib/search-params";
+import { triageWhere } from "@/lib/triage";
 import type { Prisma } from "@prisma/client";
 
 export const cellNoteInclude = {
@@ -17,6 +18,10 @@ export const cellNoteInclude = {
   issueTag: true,
   author: { select: { id: true, name: true } },
 } satisfies Prisma.CellNoteInclude;
+
+export const instrumentNoteInclude = {
+  author: { select: { id: true, name: true } },
+} satisfies Prisma.InstrumentNoteInclude;
 
 export const instrumentInclude = {
   jurisdiction: true,
@@ -27,10 +32,23 @@ export const instrumentWithNotesInclude = {
   jurisdiction: true,
   issueTags: { include: { issueTag: true } },
   notes: {
-    include: { author: { select: { id: true, name: true } } },
+    include: instrumentNoteInclude,
     orderBy: { createdAt: "desc" },
   },
 } satisfies Prisma.InstrumentInclude;
+
+/**
+ * Widening of the no-notes payload used by comparison views: `notes` is absent
+ * there but present (ordered) on triage/editor rows. Access stays
+ * optional-chained so both shapes flow through `toInstrument`.
+ */
+type InstrumentRow = Prisma.InstrumentGetPayload<{
+  include: typeof instrumentInclude;
+}> & {
+  notes?: Prisma.InstrumentNoteGetPayload<{
+    include: typeof instrumentNoteInclude;
+  }>[];
+};
 
 function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
@@ -61,19 +79,7 @@ function toIssueTag(row: {
   };
 }
 
-export function toInstrument(
-  row: Prisma.InstrumentGetPayload<{ include: typeof instrumentInclude }> & {
-    notes?: {
-      id: string;
-      instrumentId: string;
-      authorId: string;
-      body: string;
-      createdAt: Date;
-      updatedAt: Date;
-      author: { id: string; name: string | null };
-    }[];
-  }
-): Instrument {
+export function toInstrument(row: InstrumentRow): Instrument {
   return {
     id: row.id,
     jurisdictionId: row.jurisdictionId,
@@ -211,18 +217,12 @@ export function instrumentTriageWhere(input: {
     where.status = input.status;
   }
 
-  if (input.relevance === "relevant") {
-    where.isTitleIXRelevant = true;
-  } else if (input.relevance === "not_relevant") {
-    where.isTitleIXRelevant = false;
-    where.relevanceConfidence = { not: null };
-  } else if (input.relevance === "unreviewed") {
-    where.isTitleIXRelevant = false;
-    where.relevanceConfidence = null;
-  }
+  if (input.relevance !== "all") {
+      Object.assign(where, triageWhere(input.relevance));
+    }
 
-  return where;
-}
+    return where;
+  }
 
 export async function getInstrumentsForTriage(input: {
   jurisdictionCode?: string;
@@ -255,16 +255,9 @@ export async function getInstrumentsForTriage(input: {
   return rows.map(toInstrument);
 }
 
-export async function getInstrumentById(id: string): Promise<Instrument | null> {
-  const row = await prisma.instrument.findUnique({
-    where: { id },
-    include: instrumentWithNotesInclude,
-  });
-  return row ? toInstrument(row) : null;
-}
 
 export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
-  const [jurisdictions, relevantGroups, pendingGroups, tagLinks, noteGroups] =
+  const [jurisdictions, relevantGroups, pendingGroups, tagLinks, noteGroups, issueTagCount] =
     await Promise.all([
       prisma.jurisdiction.findMany({
         orderBy: [{ level: "asc" }, { code: "asc" }],
@@ -291,6 +284,7 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
         by: ["jurisdictionId"],
         _count: { id: true },
       }),
+      prisma.issueTag.count(),
     ]);
 
   // Count distinct issue tags per jurisdiction
@@ -322,8 +316,9 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
     pendingCount: pendingMap.get(j.id) ?? 0,
     issueTagCount: issueTagSets.get(j.id)?.size ?? 0,
     cellNoteCount: noteMap.get(j.id) ?? 0,
-  }));
-}
+      totalIssueTags: issueTagCount,
+    }));
+  }
 
 export const userSummarySelect = {
   id: true,
@@ -387,12 +382,5 @@ export async function getUsers(
   return rows.map(toUserSummary);
 }
 
-export async function getUserById(id: string): Promise<UserSummary | null> {
-  const row = await prisma.user.findUnique({
-    where: { id },
-    select: userSummarySelect,
-  });
-  return row ? toUserSummary(row) : null;
-}
 
 

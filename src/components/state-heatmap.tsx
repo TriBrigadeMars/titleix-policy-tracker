@@ -172,7 +172,9 @@ function TooltipPanel({ summary }: TooltipPanelProps) {
         <div className="text-muted-foreground">Pending (proposed)</div>
         <div className="font-medium">{summary.pendingCount}</div>
         <div className="text-muted-foreground">Issue areas covered</div>
-        <div className="font-medium">{summary.issueTagCount} of 8</div>
+                <div className="font-medium">
+                  {summary.issueTagCount} of {summary.totalIssueTags}
+                </div>
         <div className="text-muted-foreground">Editor notes</div>
         <div className="font-medium">{summary.cellNoteCount}</div>
       </div>

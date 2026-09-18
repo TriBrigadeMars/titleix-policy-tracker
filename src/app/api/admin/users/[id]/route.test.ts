@@ -14,7 +14,7 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/auth", () => ({ auth }));
 
-import { GET, PATCH } from "./route";
+import { PATCH } from "./route";
 
 const ADMIN = {
   id: "admin-1",
@@ -54,12 +54,6 @@ function signIn(user: unknown) {
   auth.mockResolvedValue(user === null ? null : { user });
 }
 
-function get(id: string) {
-  return new Request(`http://localhost/api/admin/users/${id}`, {
-    method: "GET",
-  });
-}
-
 function patch(id: string, body: unknown) {
   return new Request(`http://localhost/api/admin/users/${id}`, {
     method: "PATCH",
@@ -75,53 +69,6 @@ beforeEach(() => {
     ...mockTargetUser,
     role: "EDITOR",
     updatedAt: new Date("2026-01-03T00:00:00.000Z"),
-  });
-});
-
-describe("GET /api/admin/users/[id]", () => {
-  it("rejects unauthenticated requests with 401", async () => {
-    signIn(null);
-    const res = await GET(get("target-user-1"), {
-      params: Promise.resolve({ id: "target-user-1" }),
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it("rejects readers with 403", async () => {
-    signIn(READER);
-    const res = await GET(get("target-user-1"), {
-      params: Promise.resolve({ id: "target-user-1" }),
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("rejects editors with 403", async () => {
-    signIn(EDITOR);
-    const res = await GET(get("target-user-1"), {
-      params: Promise.resolve({ id: "target-user-1" }),
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("returns 404 when user is not found", async () => {
-    signIn(ADMIN);
-    findUnique.mockResolvedValue(null);
-    const res = await GET(get("nonexistent"), {
-      params: Promise.resolve({ id: "nonexistent" }),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it("returns user summary for admin", async () => {
-    signIn(ADMIN);
-    const res = await GET(get("target-user-1"), {
-      params: Promise.resolve({ id: "target-user-1" }),
-    });
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.id).toBe("target-user-1");
-    expect(data.email).toBe("target@example.com");
-    expect(data.role).toBe("READER");
   });
 });
 

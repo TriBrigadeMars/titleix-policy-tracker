@@ -1,12 +1,10 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
 import { TriageDashboard } from "@/components/triage-dashboard";
 import {
   getInstrumentsForTriage,
   getIssueTags,
   getJurisdictions,
 } from "@/lib/queries";
-import { hasRole } from "@/lib/roles";
+import { requirePageRole } from "@/lib/auth-guards";
 import { parseTriageQuery } from "@/lib/search-params";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +19,7 @@ export default async function TriagePage({
     limit?: string;
   }>;
 }) {
-  const session = await auth();
-  if (!session?.user || !hasRole(session.user.role, "EDITOR")) {
-    redirect("/");
-  }
+  await requirePageRole("EDITOR");
 
   const params = await searchParams;
   const urlParams = new URLSearchParams();

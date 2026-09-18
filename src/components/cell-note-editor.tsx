@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { describeFetchError } from "@/lib/fetch-error";
 import { formatDate } from "@/lib/format-date";
 import { CELL_NOTE_MAX_LENGTH } from "@/lib/validation";
 import type { CellNote } from "@/types";
@@ -31,25 +32,15 @@ interface CellNoteEditorProps {
   onDeleted: (id: string) => void;
 }
 
-async function describeError(response: Response): Promise<string> {
-  if (response.status === 401) return "Your session has expired. Sign in again.";
-  if (response.status === 403) return "Your role does not allow editing notes.";
-  if (response.status === 404) return "That note no longer exists.";
-
-  try {
-    const data = await response.json();
-    if (Array.isArray(data?.issues) && data.issues.length > 0) {
-      return data.issues
-        .map((issue: { message?: string }) => issue.message)
-        .filter(Boolean)
-        .join(" ");
-    }
-    if (typeof data?.error === "string") return data.error;
-  } catch {
-    // Non-JSON error body; fall through to the generic message.
-  }
-
-  return "Something went wrong. Try again.";
+/**
+ * Cell-note specific wording for shared fetch-error translation.
+ */
+function describeNoteError(response: Response): Promise<string> {
+  return describeFetchError(response, {
+    forbidden: "Your role does not allow editing notes.",
+    notFound: "That note no longer exists.",
+    fallback: "Something went wrong. Try again.",
+  });
 }
 
 /**
@@ -88,7 +79,7 @@ export function CellNoteEditor({
       });
 
       if (!response.ok) {
-        setError(await describeError(response));
+              setError(await describeNoteError(response));
         return;
       }
 
@@ -114,7 +105,7 @@ export function CellNoteEditor({
       );
 
       if (!response.ok) {
-        setError(await describeError(response));
+              setError(await describeNoteError(response));
         return;
       }
 

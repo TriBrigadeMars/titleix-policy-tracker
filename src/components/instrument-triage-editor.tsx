@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { describeFetchError } from "@/lib/fetch-error";
 import { formatDate } from "@/lib/format-date";
 import { INSTRUMENT_NOTE_MAX_LENGTH } from "@/lib/validation";
 import type { Instrument, InstrumentNote, IssueTag } from "@/types";
@@ -23,27 +24,6 @@ interface InstrumentTriageEditorProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved: (updated: Instrument) => void;
-}
-
-async function describeError(response: Response): Promise<string> {
-  if (response.status === 401) return "Your session has expired. Sign in again.";
-  if (response.status === 403) return "Your role does not allow editing.";
-  if (response.status === 404) return "Record no longer exists.";
-
-  try {
-    const data = await response.json();
-    if (Array.isArray(data?.issues) && data.issues.length > 0) {
-      return data.issues
-        .map((issue: { message?: string }) => issue.message)
-        .filter(Boolean)
-        .join(" ");
-    }
-    if (typeof data?.error === "string") return data.error;
-  } catch {
-    // Non-JSON fallback
-  }
-
-  return "Something went wrong. Please try again.";
 }
 
 export function InstrumentTriageEditor({
@@ -70,6 +50,24 @@ export function InstrumentTriageEditor({
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
+
+  /**
+   * Build the instrument payload reflecting the in-progress edits (relevance,
+   * confidence, tags) plus the supplied notes. Extracted because save, add-note,
+   * and delete-note all need to push the same parent state upstream.
+   */
+  const deriveUpdatedInstrument = useCallback(
+    (nextNotes: InstrumentNote[]): Instrument => ({
+      ...instrument,
+      isTitleIXRelevant: isRelevant,
+      relevanceConfidence: confidence === "" ? null : Number(confidence),
+      issueTags: issueTags
+        .filter((tag) => selectedTags.has(tag.id))
+        .map((tag) => ({ issueTag: tag })),
+      notes: nextNotes,
+    }),
+    [instrument, isRelevant, confidence, issueTags, selectedTags]
+  );
 
   function toggleTag(tagId: string) {
     setSelectedTags((prev) => {
@@ -99,7 +97,7 @@ export function InstrumentTriageEditor({
       });
 
       if (!response.ok) {
-        setError(await describeError(response));
+        setError(await describeFetchError(response));
         return;
       }
 
@@ -131,7 +129,7 @@ export function InstrumentTriageEditor({
       });
 
       if (!response.ok) {
-        setNoteError(await describeError(response));
+        setNoteError(await describeFetchError(response));
         return;
       }
 
@@ -141,15 +139,7 @@ export function InstrumentTriageEditor({
       setNewNoteBody("");
 
       // Update parent instrument state with new notes
-      onSaved({
-        ...instrument,
-        isTitleIXRelevant: isRelevant,
-        relevanceConfidence: confidence === "" ? null : Number(confidence),
-        issueTags: issueTags
-          .filter((tag) => selectedTags.has(tag.id))
-          .map((tag) => ({ issueTag: tag })),
-        notes: updatedNotes,
-      });
+      onSaved(deriveUpdatedInstrument(updatedNotes));
     } catch {
       setNoteError("Could not reach the server.");
     } finally {
@@ -167,22 +157,14 @@ export function InstrumentTriageEditor({
       });
 
       if (!response.ok && response.status !== 404) {
-        setNoteError(await describeError(response));
+        setNoteError(await describeFetchError(response));
         return;
       }
 
       const updatedNotes = notes.filter((n) => n.id !== noteId);
       setNotes(updatedNotes);
 
-      onSaved({
-        ...instrument,
-        isTitleIXRelevant: isRelevant,
-        relevanceConfidence: confidence === "" ? null : Number(confidence),
-        issueTags: issueTags
-          .filter((tag) => selectedTags.has(tag.id))
-          .map((tag) => ({ issueTag: tag })),
-        notes: updatedNotes,
-      });
+      onSaved(deriveUpdatedInstrument(updatedNotes));
     } catch {
       setNoteError("Could not reach the server.");
     } finally {

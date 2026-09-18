@@ -67,6 +67,19 @@ That was rejected as a foundation. The replacement rules still apply:
 - Do not add `if`s to shared paths for a new feature. Give the feature its own module.
 - No file past 1000 lines without a structural reason.
 
+### Second review (2026-09-18 PRs #10, #11, #12)
+
+A post-merge review of the triage, heatmap, and admin slices fixed eight findings:
+
+1. The tri-state relevance encoding is now centralized in `src/lib/triage.ts` (`triageStatus()` / `triageWhere()`), replacing scattered inline derivations in `queries.ts` and `triage-dashboard.tsx`.
+2. The duplicated `describeError` helpers collapsed into `src/lib/fetch-error.ts` (`describeFetchError()` with per-editor option overrides).
+3. Pages now use a shared `requirePageRole()` redirect guard in `src/lib/auth-guards.ts` instead of re-rolling auth checks in `triage/page.tsx` and `admin/page.tsx`.
+4. `instrument-triage-editor.tsx` now builds the parent instrument once via a single `deriveUpdatedInstrument` helper (was three hand-rolled rebuilds).
+5. `toInstrument` is typed from Prisma payload types via `instrumentInclude` / `instrumentNoteInclude` (no hand-stubbed notes type).
+6. The heatmap tooltip no longer hardcodes "of 8"; `totalIssueTags` is aggregated and threaded through.
+7. Dead read endpoints/functions (`getInstrumentById`, `getUserById`, `GET /api/instruments/[id]`, `GET /api/admin/users/[id]`) were removed with their tests.
+8. `ALL_ROLES` is an `as const` tuple driving `z.enum(ALL_ROLES)`, and list parsing shares `parseBoundedLimit()`.
+
 ## What is not done
 
 | Gap | Notes |
@@ -116,14 +129,14 @@ That was rejected as a foundation. The replacement rules still apply:
 - `PATCH /api/instruments/[id]` — EDITOR-only endpoint for setting `isTitleIXRelevant`, `relevanceConfidence`, and atomically synchronizing issue tags (`InstrumentIssueTag` junction).
 - `POST /api/instrument-notes` & `DELETE /api/instrument-notes?id=` — EDITOR-only endpoints for managing `InstrumentNote` records. `authorId` is strictly session-derived (`guard.user.id`).
 - Strict zod schemas in `src/lib/validation.ts`: `instrumentTriageSchema`, `instrumentNoteCreateSchema`.
-- Query layer: `instrumentTriageWhere`, `getInstrumentsForTriage`, and `getInstrumentById` in `src/lib/queries.ts`.
+- Query layer: `instrumentTriageWhere`, `getInstrumentsForTriage` in `src/lib/queries.ts`. The tri-state relevance encoding (unreviewed/relevant/not-relevant) lives in `src/lib/triage.ts` (`triageStatus`, `triageWhere`) so the query layer and the dashboard badge UI stay in sync.
 - Tests: route unit tests for `PATCH /api/instruments/[id]` and `POST`/`DELETE /api/instrument-notes` covering 401/403/400/404, Zod schema validation tests, and query where builder tests.
 
 ## 50-State Heatmap
 
 - `src/app/(protected)/heatmap/page.tsx` — RSC page for a national overview visualizing Title IX policy and legislative activity across all 50 states + DC + federal jurisdiction.
 - `src/components/state-heatmap.tsx` — 12×8 positioned grid tile layout representing all 51 jurisdictions with dynamic HSL color-scaling based on Title IX relevance volume, interactive sidebar detail cards, and direct deep-links into the comparison matrix (`/?j=US,{code}`).
-- `src/lib/queries.ts` — `getHeatmapSummaries()` aggregates per-jurisdiction metrics (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) via parallel Prisma queries and in-memory joins without raw SQL or schema migrations.
+- `src/lib/queries.ts` — `getHeatmapSummaries()` aggregates per-jurisdiction metrics (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) plus a shared `totalIssueTags` (all seeded tags) via parallel Prisma queries and in-memory joins without raw SQL or schema migrations. The tooltip renders "X of N" from `totalIssueTags` rather than a hardcoded 8.
 - `src/types/index.ts` — `HeatmapSummary` interface exported for clean DTO boundaries.
 - `src/components/site-header.tsx` — "Heatmap" link added to the main navigation for all authenticated users.
 
@@ -133,10 +146,10 @@ That was rejected as a foundation. The replacement rules still apply:
 - `src/components/admin-user-table.tsx` — client component with real-time role updating (`READER`, `EDITOR`, `ADMIN`), search filter, role filter, clear filters, and self-demotion prevention indicator.
 - `src/components/site-header.tsx` — "Admin" link in main navigation rendered only for users with `ADMIN` role.
 - `GET /api/admin/users` — ADMIN-only endpoint for listing users with bounded search, role, and pagination limit filters via `parseUserListQuery`.
-- `GET /api/admin/users/[id]` & `PATCH /api/admin/users/[id]` — ADMIN-only endpoints for viewing and updating user roles. Enforces self-demotion prevention (`guard.user.id === id && role !== "ADMIN"`).
+- `PATCH /api/admin/users/[id]` — ADMIN-only endpoint for updating user roles. Enforces self-demotion prevention (`guard.user.id === id && role !== "ADMIN"`).
 - Strict zod schema in `src/lib/validation.ts`: `userRoleUpdateSchema` (`z.strictObject`).
-- Query layer in `src/lib/queries.ts`: `userListWhere`, `getUsers`, `getUserById`, `userSummarySelect`, `toUserSummary`.
-- Tests: route unit tests for `GET /api/admin/users`, `GET /api/admin/users/[id]`, and `PATCH /api/admin/users/[id]` covering 401/403/400/404/self-demotion/success; validation tests; query where builder tests; and search-param parsing tests.
+- Query layer in `src/lib/queries.ts`: `userListWhere`, `getUsers`, `userSummarySelect`, `toUserSummary`.
+- Tests: route unit tests for `GET /api/admin/users` and `PATCH /api/admin/users/[id]` covering 401/403/400/404/self-demotion/success; validation tests; query where builder tests; and search-param parsing tests.
 
 ## Suggested next slice
 

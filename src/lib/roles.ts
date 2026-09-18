@@ -9,7 +9,7 @@ export type UserRole = "READER" | "EDITOR" | "ADMIN";
 
 export const DEFAULT_ROLE: UserRole = "READER";
 
-export const ALL_ROLES: readonly UserRole[] = ["READER", "EDITOR", "ADMIN"];
+export const ALL_ROLES = ["READER", "EDITOR", "ADMIN"] as const;
 
 const ROLE_RANK: Record<UserRole, number> = {
   READER: 0,

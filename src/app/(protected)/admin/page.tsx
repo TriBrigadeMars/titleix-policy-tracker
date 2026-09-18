@@ -1,8 +1,6 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
 import { AdminUserTable } from "@/components/admin-user-table";
 import { getUsers } from "@/lib/queries";
-import { hasRole } from "@/lib/roles";
+import { requirePageRole } from "@/lib/auth-guards";
 import { parseUserListQuery } from "@/lib/search-params";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +14,7 @@ export default async function AdminPage({
     limit?: string;
   }>;
 }) {
-  const session = await auth();
-  if (!session?.user || !hasRole(session.user.role, "ADMIN")) {
-    redirect("/");
-  }
+  const session = await requirePageRole("ADMIN");
 
   const params = await searchParams;
   const urlParams = new URLSearchParams();
