@@ -67,5 +67,26 @@ New users default to `READER`.
 ## Security
 
 - OAuth via Google (NextAuth.js)
-- Role-based access enforced in API routes and middleware
+- Sessions are stored in the database via the Prisma adapter, so role changes
+  take effect immediately (no stale JWT to wait out).
 - `security-review` agent audit required after any auth-related PR
+
+### Authorization layers
+
+Access is enforced in three places, in order:
+
+| Layer | File | Scope |
+|-------|------|-------|
+| Edge middleware | `src/middleware.ts` | Fast-path only: redirects to `/sign-in` (or returns 401 JSON for `/api/*`) when no session cookie is present. Does **not** validate the session. |
+| Route-group layout | `src/app/(protected)/layout.tsx` | Authoritative page gate. Calls `auth()` and redirects unauthenticated users. |
+| API guards | `src/lib/auth-guards.ts` | Authoritative API gate. `requireUser()` / `requireRole()` return a typed result the handler can return directly. |
+
+The middleware deliberately does **not** call `auth()`: sessions live in the
+database and the edge runtime cannot reach it. Treat it as a UX optimization,
+never as the security boundary.
+
+Roles are defined once in `src/lib/roles.ts` (a mirror of the Prisma `UserRole`
+enum, kept separate so `tsc --noEmit` works before `prisma generate` runs) and
+compared with `hasRole()`, which implements the `READER < EDITOR < ADMIN`
+hierarchy.
+

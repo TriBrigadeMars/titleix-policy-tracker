@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireUser } from "@/lib/auth-guards";
+import { parseIdList } from "@/lib/search-params";
 
 export async function GET(request: Request) {
+  const guard = await requireUser();
+  if (!guard.ok) return guard.response;
+
   const { searchParams } = new URL(request.url);
-  const jurisdictionIds = searchParams.get("jurisdictionIds")?.split(",") ?? [];
-  const issueTagIds = searchParams.get("issueTagIds")?.split(",") ?? [];
+  const jurisdictionIds = parseIdList(searchParams.get("jurisdictionIds"));
+  const issueTagIds = parseIdList(searchParams.get("issueTagIds"));
 
   const where: Record<string, unknown> = {};
 
