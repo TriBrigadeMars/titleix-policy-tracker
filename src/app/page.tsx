@@ -1,10 +1,61 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { JurisdictionSelector } from "@/components/jurisdiction-selector";
+import { ComparisonMatrix } from "@/components/comparison-matrix";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Jurisdiction } from "@/types";
+
 export default function Home() {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [jurisdictionCodes, setJurisdictionCodes] = useState<
+    Record<string, string>
+  >({});
+
+  useEffect(() => {
+    fetch("/api/jurisdictions")
+      .then((res) => res.json())
+      .then((data: Jurisdiction[]) => {
+        const codes: Record<string, string> = {};
+        data.forEach((j) => {
+          codes[j.id] = j.code;
+        });
+        setJurisdictionCodes(codes);
+      })
+      .catch(console.error);
+  }, []);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold mb-4">Title IX Policy Tracker</h1>
-      <p className="text-lg text-muted-foreground">
-        Track proposed and passed laws impacting Title IX across the United States.
+    <main className="container mx-auto py-8 px-4">
+      <h1 className="text-3xl font-bold mb-2">Title IX Policy Tracker</h1>
+      <p className="text-muted-foreground mb-8">
+        Compare proposed and passed laws impacting Title IX across
+        jurisdictions.
       </p>
+
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle>Select Jurisdictions to Compare</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <JurisdictionSelector
+            selected={selectedIds}
+            onChange={setSelectedIds}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Comparison Matrix</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ComparisonMatrix
+            jurisdictionIds={selectedIds}
+            jurisdictionCodes={jurisdictionCodes}
+          />
+        </CardContent>
+      </Card>
     </main>
   );
 }
