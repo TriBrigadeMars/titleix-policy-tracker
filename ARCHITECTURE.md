@@ -115,6 +115,12 @@ machine-known fields and `lastCheckedAt`.
   `PROPOSED`; editors triage.
 - **Trigger** (`POST /api/ingest/congress`): ADMIN-only. Optional `?congress=N`.
   Requires `CONGRESS_GOV_API_KEY` env var.
+- **State adapters** (`src/lib/ingest/openstates.ts`, `src/lib/ingest/legiscan.ts`):
+  fetch state bills from OpenStates v3 and LegiScan, deriving the two-letter
+  jurisdiction code from the source. Shared helpers (state-code derivation and
+  LegiScan status mapping) live in `src/lib/ingest/state.ts`. Both are ADMIN-only
+  triggers (`POST /api/ingest/openstates`, `POST /api/ingest/legiscan`) and keyed
+  by `OPEN_STATES_API_KEY` / `LEGISCAN_API_KEY`.
 
 The UI only renders edit affordances when the server says the viewer is an
 `EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a

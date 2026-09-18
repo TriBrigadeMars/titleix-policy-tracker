@@ -130,6 +130,28 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
   mapping (table-driven, 7 cases), route authz (401/403/ADMIN/502/param
   clamping).
 
+### State bill ingest (LegiScan & OpenStates)
+
+- `src/lib/ingest/state.ts` — shared pure helpers for state-level adapters:
+  `stateCodeFromOpenStatesJurisdiction()` (OCD jurisdiction id → 2-letter code)
+  and LegiScan `BillStatus` → instrument status mapping.
+- `src/lib/ingest/openstates.ts` — `mapOpenStatesBills()` pure mapper
+  (OpenStates v3 bills JSON → `RawInstrument[]`, derives the state code from
+  the OCD jurisdiction id, skips foreign/malformed bills) plus
+  `openStatesAdapter` (fetches `https://v3.openstates.org/bills` with the
+  `X-API-KEY` header from `OPEN_STATES_API_KEY`).
+- `POST /api/ingest/openstates` — ADMIN-only trigger. Query params
+  `jurisdiction` (default `nc`), `session`, `limit` (default 50, capped 100).
+- `src/lib/ingest/legiscan.ts` — `mapLegiScanMasterList()` pure mapper
+  (LegiScan `getMasterList` JSON → `RawInstrument[]`, handles the numeric-key
+  `masterlist` plus the special `session` key and string/number `status`) plus
+  `legiScanAdapter` (fetches `https://api.legiscan.com/?op=getMasterList` using
+  `LEGISCAN_API_KEY`).
+- `POST /api/ingest/legiscan` — ADMIN-only trigger. Query params `id` (session
+  id, preferred) or `state` (two-letter abbreviation).
+- Tests: table-driven mappers for both adapters, shared helper tests, and route
+  authz (401/403/ADMIN/502/params) for both triggers.
+
 ## Editor triage & Instrument notes
 
 - `src/app/(protected)/triage/page.tsx` — RSC page for reviewing unreviewed, relevant, and not relevant instruments with bounded filters (`jurisdiction`, `status`, `relevance`, `limit`). Gate checks `EDITOR` role and redirects non-editors.
@@ -161,10 +183,8 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 
 ## Suggested next slice
 
-1. More ingest adapters (LegiScan, OpenStates) — now just implement
-   `IngestAdapter` and add a route; the upsert path is reusable.
-2. Public heatmap/matrix view for anonymous users.
-3. Extend DB-backed integration tests to the write paths (cell notes, triage
+1. Public heatmap/matrix view for anonymous users.
+2. Extend DB-backed integration tests to the write paths (cell notes, triage
    `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
