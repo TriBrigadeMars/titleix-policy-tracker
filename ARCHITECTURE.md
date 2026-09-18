@@ -64,6 +64,47 @@ New users default to `READER`.
 3. Editors write cell notes comparing jurisdictions on each issue
 4. Public users view heatmap (50-state overview) and comparison matrix
 
+## Write Path
+
+Cell notes are the first, and currently the only, mutation in the app.
+
+- `PUT /api/cell-notes` upserts the note for a `(jurisdiction, issue tag)` pair,
+  which `CellNote` already treats as unique. There is deliberately no separate
+  create and update endpoint.
+- `DELETE /api/cell-notes?id=...` removes a single note.
+- Both require `EDITOR`, enforced with `requireRole()`. Reads need only
+  `requireUser()`.
+- `authorId` always comes from the session. The request body is parsed with the
+  strict zod schema in `src/lib/validation.ts`, so a body cannot set the author
+  or smuggle in any other column.
+- Editing a note does **not** reassign the author: the cell keeps crediting
+  whoever first wrote it, and `updatedAt` is what signals a later revision. If
+  that proves insufficient, an `updatedById` column is the fix, and it would
+  need the first Prisma migration.
+- Note bodies are capped at 10,000 characters at the schema layer, since
+  `@db.Text` is unbounded in Postgres.
+
+The UI only renders edit affordances when the server says the viewer is an
+`EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a
+security boundary; the API guard is what authorizes the write.
+
+## Testing
+
+`npm test` runs Vitest over `src/**/*.test.ts`. Coverage is concentrated on the
+two places where a regression would otherwise be silent:
+
+- `src/lib/roles.test.ts` - the `READER < EDITOR < ADMIN` hierarchy, including
+  failing closed for an unrecognized role.
+- `src/lib/validation.test.ts` - the strict cell note schema, including the
+  length boundary and rejection of unknown fields.
+- `src/app/api/cell-notes/route.test.ts` - the 401/403 boundary and the upsert
+  arguments, with `auth` and Prisma mocked. Asserts that `authorId` comes from
+  the session and is never taken from the request.
+
+There is no database-backed integration test yet, and CI does not apply the
+schema, so nothing currently verifies that the schema applies to a real
+Postgres.
+
 ## Security
 
 - OAuth via Google (NextAuth.js)

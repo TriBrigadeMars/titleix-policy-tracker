@@ -39,6 +39,7 @@ npm run dev
 | `npm run db:migrate` | Run database migrations |
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run db:seed` | Seed jurisdictions and issue tags |
+| `npm test` | Run the Vitest suite |
 
 ## Architecture
 

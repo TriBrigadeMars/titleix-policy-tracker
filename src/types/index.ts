@@ -36,6 +36,8 @@ export interface CellNote {
   jurisdictionId: string;
   issueTagId: string;
   body: string;
+  createdAt: string;
+  updatedAt: string;
   jurisdiction: Jurisdiction;
   issueTag: IssueTag;
   author: { id: string; name: string | null };
