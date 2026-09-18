@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type {
   CellNote,
+  HeatmapSummary,
   Instrument,
   InstrumentStatus,
   IssueTag,
@@ -259,3 +260,66 @@ export async function getInstrumentById(id: string): Promise<Instrument | null> 
   });
   return row ? toInstrument(row) : null;
 }
+
+export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
+  const [jurisdictions, relevantGroups, pendingGroups, tagLinks, noteGroups] =
+    await Promise.all([
+      prisma.jurisdiction.findMany({
+        orderBy: [{ level: "asc" }, { code: "asc" }],
+      }),
+      prisma.instrument.groupBy({
+        by: ["jurisdictionId"],
+        where: { isTitleIXRelevant: true },
+        _count: { id: true },
+      }),
+      prisma.instrument.groupBy({
+        by: ["jurisdictionId"],
+        where: { isTitleIXRelevant: true, status: "PROPOSED" },
+        _count: { id: true },
+      }),
+      // Fetch issue-tag links for relevant instruments to count distinct tags per jurisdiction
+      prisma.instrumentIssueTag.findMany({
+        where: { instrument: { isTitleIXRelevant: true } },
+        select: {
+          issueTagId: true,
+          instrument: { select: { jurisdictionId: true } },
+        },
+      }),
+      prisma.cellNote.groupBy({
+        by: ["jurisdictionId"],
+        _count: { id: true },
+      }),
+    ]);
+
+  // Count distinct issue tags per jurisdiction
+  const issueTagSets = new Map<string, Set<string>>();
+  for (const link of tagLinks) {
+    const jId = link.instrument.jurisdictionId;
+    let s = issueTagSets.get(jId);
+    if (!s) {
+      s = new Set();
+      issueTagSets.set(jId, s);
+    }
+    s.add(link.issueTagId);
+  }
+
+  const relevantMap = new Map(
+    relevantGroups.map((g) => [g.jurisdictionId, g._count.id])
+  );
+  const pendingMap = new Map(
+    pendingGroups.map((g) => [g.jurisdictionId, g._count.id])
+  );
+  const noteMap = new Map(
+    noteGroups.map((g) => [g.jurisdictionId, g._count.id])
+  );
+
+  return jurisdictions.map((j) => ({
+    jurisdictionId: j.id,
+    jurisdiction: toJurisdiction(j),
+    relevantCount: relevantMap.get(j.id) ?? 0,
+    pendingCount: pendingMap.get(j.id) ?? 0,
+    issueTagCount: issueTagSets.get(j.id)?.size ?? 0,
+    cellNoteCount: noteMap.get(j.id) ?? 0,
+  }));
+}
+
