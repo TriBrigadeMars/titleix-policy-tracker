@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 export async function SiteHeader() {
   const session = await auth();
   const isEditor = session?.user?.role ? hasRole(session.user.role, "EDITOR") : false;
+  const isAdmin = session?.user?.role ? hasRole(session.user.role, "ADMIN") : false;
 
   async function signOutAction() {
     "use server";
@@ -40,6 +41,14 @@ export async function SiteHeader() {
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Triage
+                </Link>
+              )}
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Admin
                 </Link>
               )}
             </nav>

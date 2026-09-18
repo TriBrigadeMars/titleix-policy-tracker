@@ -6,8 +6,10 @@ import type {
   InstrumentStatus,
   IssueTag,
   Jurisdiction,
+  UserSummary,
 } from "@/types";
-import type { TriageRelevanceFilter } from "@/lib/search-params";
+import type { UserRole } from "@/lib/roles";
+import type { TriageRelevanceFilter, UserListQuery } from "@/lib/search-params";
 import type { Prisma } from "@prisma/client";
 
 export const cellNoteInclude = {
@@ -322,4 +324,75 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
     cellNoteCount: noteMap.get(j.id) ?? 0,
   }));
 }
+
+export const userSummarySelect = {
+  id: true,
+  email: true,
+  name: true,
+  image: true,
+  role: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+export function toUserSummary(row: {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  role: UserRole;
+  createdAt: Date;
+  updatedAt: Date;
+}): UserSummary {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    image: row.image,
+    role: row.role,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function userListWhere(input: {
+  search?: string;
+  role?: UserRole;
+}): Prisma.UserWhereInput {
+  const where: Prisma.UserWhereInput = {};
+
+  if (input.role) {
+    where.role = input.role;
+  }
+
+  if (input.search) {
+    where.OR = [
+      { name: { contains: input.search, mode: "insensitive" } },
+      { email: { contains: input.search, mode: "insensitive" } },
+    ];
+  }
+
+  return where;
+}
+
+export async function getUsers(
+  input: UserListQuery
+): Promise<UserSummary[]> {
+  const rows = await prisma.user.findMany({
+    where: userListWhere({ search: input.search, role: input.role }),
+    select: userSummarySelect,
+    orderBy: [{ role: "desc" }, { createdAt: "desc" }],
+    take: input.limit ?? 50,
+  });
+  return rows.map(toUserSummary);
+}
+
+export async function getUserById(id: string): Promise<UserSummary | null> {
+  const row = await prisma.user.findUnique({
+    where: { id },
+    select: userSummarySelect,
+  });
+  return row ? toUserSummary(row) : null;
+}
+
 

@@ -3,6 +3,7 @@ import {
   cellNoteComparisonWhere,
   instrumentComparisonWhere,
   instrumentTriageWhere,
+  userListWhere,
 } from "./queries";
 
 describe("instrumentComparisonWhere", () => {
@@ -105,3 +106,35 @@ describe("instrumentTriageWhere", () => {
     });
   });
 });
+
+describe("userListWhere", () => {
+  it("returns empty where when no filter provided", () => {
+    expect(userListWhere({})).toEqual({});
+  });
+
+  it("filters by role when provided", () => {
+    expect(userListWhere({ role: "ADMIN" })).toEqual({
+      role: "ADMIN",
+    });
+  });
+
+  it("filters by search term in name and email", () => {
+    expect(userListWhere({ search: "alice" })).toEqual({
+      OR: [
+        { name: { contains: "alice", mode: "insensitive" } },
+        { email: { contains: "alice", mode: "insensitive" } },
+      ],
+    });
+  });
+
+  it("combines role and search filters", () => {
+    expect(userListWhere({ search: "bob", role: "EDITOR" })).toEqual({
+      role: "EDITOR",
+      OR: [
+        { name: { contains: "bob", mode: "insensitive" } },
+        { email: { contains: "bob", mode: "insensitive" } },
+      ],
+    });
+  });
+});
+

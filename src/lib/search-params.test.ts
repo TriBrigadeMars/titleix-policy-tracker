@@ -4,6 +4,7 @@ import {
   parseComparisonQuery,
   parseIdList,
   parseTriageQuery,
+  parseUserListQuery,
 } from "./search-params";
 
 describe("parseIdList", () => {
@@ -129,5 +130,72 @@ describe("parseTriageQuery", () => {
       relevance: "unreviewed",
       limit: 50,
     });
+  });
+});
+
+describe("parseUserListQuery", () => {
+  it("uses default parameters when searchParams is empty", () => {
+    expect(parseUserListQuery(new URLSearchParams())).toEqual({
+      search: undefined,
+      role: undefined,
+      limit: 50,
+    });
+  });
+
+  it("parses valid search term and role", () => {
+    expect(
+      parseUserListQuery(
+        new URLSearchParams({
+          search: "alice@example.com",
+          role: "EDITOR",
+          limit: "25",
+        })
+      )
+    ).toEqual({
+      search: "alice@example.com",
+      role: "EDITOR",
+      limit: 25,
+    });
+  });
+
+  it("trims search parameter and ignores empty search", () => {
+    expect(
+      parseUserListQuery(new URLSearchParams({ search: "  " }))
+    ).toEqual({
+      search: undefined,
+      role: undefined,
+      limit: 50,
+    });
+  });
+
+  it("ignores search parameter longer than 100 characters", () => {
+    const longSearch = "a".repeat(101);
+    expect(
+      parseUserListQuery(new URLSearchParams({ search: longSearch }))
+    ).toEqual({
+      search: undefined,
+      role: undefined,
+      limit: 50,
+    });
+  });
+
+  it("ignores invalid role values", () => {
+    expect(
+      parseUserListQuery(new URLSearchParams({ role: "SUPER_ADMIN" }))
+    ).toEqual({
+      search: undefined,
+      role: undefined,
+      limit: 50,
+    });
+  });
+
+  it("clamps limit between 1 and MAX_USER_LIST_LIMIT", () => {
+    expect(
+      parseUserListQuery(new URLSearchParams({ limit: "500" })).limit
+    ).toBe(100);
+
+    expect(
+      parseUserListQuery(new URLSearchParams({ limit: "-10" })).limit
+    ).toBe(50);
   });
 });
