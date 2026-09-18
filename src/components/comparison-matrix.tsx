@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { ExternalLink, Pencil } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -10,74 +10,66 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   CellNoteEditor,
   type CellNoteTarget,
 } from "@/components/cell-note-editor";
-import type { IssueTag, Instrument, CellNote } from "@/types";
+import { MatrixCell } from "@/components/matrix-cell";
+import type { CellNote, Instrument, IssueTag, Jurisdiction } from "@/types";
 
 interface ComparisonMatrixProps {
-  jurisdictionIds: string[];
-  jurisdictionCodes: Record<string, string>;
+  jurisdictions: Jurisdiction[];
+  issueTags: IssueTag[];
+  instruments: Instrument[];
+  cellNotes: CellNote[];
   /** Resolved on the server from the session. Purely a display concern. */
   canEdit?: boolean;
+  isPending?: boolean;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  PROPOSED: "bg-blue-100 text-blue-800",
-  PASSED: "bg-green-100 text-green-800",
-  EFFECTIVE: "bg-emerald-100 text-emerald-800",
-  ENJOINED: "bg-yellow-100 text-yellow-800",
-  REPEALED: "bg-gray-100 text-gray-800",
-};
-
-function formatDate(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleDateString();
+function cellKey(jurisdictionId: string, issueTagId: string) {
+  return `${jurisdictionId}:${issueTagId}`;
 }
 
 export function ComparisonMatrix({
-  jurisdictionIds,
-  jurisdictionCodes,
+  jurisdictions,
+  issueTags,
+  instruments,
+  cellNotes,
   canEdit = false,
+  isPending = false,
 }: ComparisonMatrixProps) {
-  const [issueTags, setIssueTags] = useState<IssueTag[]>([]);
-  const [instruments, setInstruments] = useState<Instrument[]>([]);
-  const [cellNotes, setCellNotes] = useState<CellNote[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const [notes, setNotes] = useState(cellNotes);
   const [editing, setEditing] = useState<CellNoteTarget | null>(null);
 
   useEffect(() => {
-    if (jurisdictionIds.length === 0) {
-      setLoading(false);
-      return;
+    setNotes(cellNotes);
+  }, [cellNotes]);
+
+  const notesByCell = useMemo(() => {
+    const map = new Map<string, CellNote>();
+    for (const note of notes) {
+      map.set(cellKey(note.jurisdictionId, note.issueTagId), note);
     }
+    return map;
+  }, [notes]);
 
-    setLoading(true);
-    const params = new URLSearchParams({
-      jurisdictionIds: jurisdictionIds.join(","),
-    });
-
-    Promise.all([
-      fetch("/api/issue-tags").then((r) => r.json()),
-      fetch(`/api/instruments?${params}`).then((r) => r.json()),
-      fetch(`/api/cell-notes?${params}`).then((r) => r.json()),
-    ])
-      .then(([tags, insts, notes]) => {
-        setIssueTags(tags);
-        setInstruments(insts);
-        setCellNotes(notes);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [jurisdictionIds]);
+  const instrumentsByCell = useMemo(() => {
+    const map = new Map<string, Instrument[]>();
+    for (const inst of instruments) {
+      for (const link of inst.issueTags) {
+        const key = cellKey(inst.jurisdictionId, link.issueTag.id);
+        const list = map.get(key);
+        if (list) list.push(inst);
+        else map.set(key, [inst]);
+      }
+    }
+    return map;
+  }, [instruments]);
 
   function handleSaved(note: CellNote) {
-    // The server is the source of truth for the row, so replace whatever we had
-    // for this cell rather than assuming it was a create.
-    setCellNotes((prev) => [
+    setNotes((prev) => [
       ...prev.filter(
         (n) =>
           n.id !== note.id &&
@@ -88,13 +80,15 @@ export function ComparisonMatrix({
       ),
       note,
     ]);
+    router.refresh();
   }
 
   function handleDeleted(id: string) {
-    setCellNotes((prev) => prev.filter((n) => n.id !== id));
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+    router.refresh();
   }
 
-  if (jurisdictionIds.length === 0) {
+  if (jurisdictions.length < 2) {
     return (
       <div className="text-center py-12 text-muted-foreground">
         Select at least 2 jurisdictions to compare.
@@ -102,25 +96,13 @@ export function ComparisonMatrix({
     );
   }
 
-  if (loading) {
+  if (isPending) {
     return (
       <div className="text-center py-12 text-muted-foreground">
         Loading comparison data...
       </div>
     );
   }
-
-  const getInstrumentsForCell = (jurisdictionId: string, issueTagId: string) =>
-    instruments.filter(
-      (inst) =>
-        inst.jurisdictionId === jurisdictionId &&
-        inst.issueTags.some((t) => t.issueTag.id === issueTagId)
-    );
-
-  const getCellNote = (jurisdictionId: string, issueTagId: string) =>
-    cellNotes.find(
-      (n) => n.jurisdictionId === jurisdictionId && n.issueTagId === issueTagId
-    );
 
   return (
     <>
@@ -131,9 +113,12 @@ export function ComparisonMatrix({
               <TableHead className="w-[200px] sticky left-0 bg-background">
                 Issue
               </TableHead>
-              {jurisdictionIds.map((jId) => (
-                <TableHead key={jId} className="min-w-[200px] text-center">
-                  {jurisdictionCodes[jId] ?? jId}
+              {jurisdictions.map((jurisdiction) => (
+                <TableHead
+                  key={jurisdiction.id}
+                  className="min-w-[200px] text-center"
+                >
+                  {jurisdiction.code}
                 </TableHead>
               ))}
             </TableRow>
@@ -149,101 +134,21 @@ export function ComparisonMatrix({
                     </div>
                   )}
                 </TableCell>
-                {jurisdictionIds.map((jId) => {
-                  const jurisdictionLabel = jurisdictionCodes[jId] ?? jId;
-                  const cellInstruments = getInstrumentsForCell(jId, tag.id);
-                  const note = getCellNote(jId, tag.id);
-
+                {jurisdictions.map((jurisdiction) => {
+                  const key = cellKey(jurisdiction.id, tag.id);
                   return (
                     <TableCell
-                      key={`${jId}-${tag.id}`}
+                      key={`${jurisdiction.id}-${tag.id}`}
                       className="align-top"
                     >
-                      <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          {note && (
-                            <div>
-                              <div className="text-sm whitespace-pre-wrap">
-                                {note.body}
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {note.author.name ?? "An editor"}
-                                {note.updatedAt
-                                  ? ` - last edited ${formatDate(note.updatedAt)}`
-                                  : ""}
-                              </div>
-                            </div>
-                          )}
-
-                          {cellInstruments.length > 0 && (
-                            <div className="space-y-1">
-                              {cellInstruments.map((inst) => (
-                                <div
-                                  key={inst.id}
-                                  className="text-xs border rounded p-1.5"
-                                >
-                                  <div className="flex items-center gap-1">
-                                    <Badge
-                                      variant="secondary"
-                                      className={STATUS_COLORS[inst.status]}
-                                    >
-                                      {inst.status}
-                                    </Badge>
-                                    <span className="font-mono text-xs">
-                                      {inst.identifier}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 font-medium">
-                                    {inst.title}
-                                  </div>
-                                  {inst.sourceUrl && (
-                                    <a
-                                      href={inst.sourceUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:underline flex items-center gap-1 mt-1"
-                                    >
-                                      Source{" "}
-                                      <ExternalLink className="h-3 w-3" />
-                                    </a>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {!note && cellInstruments.length === 0 && (
-                            <span className="text-xs text-muted-foreground italic">
-                              No data
-                            </span>
-                          )}
-                        </div>
-
-                        {canEdit && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 shrink-0 text-muted-foreground"
-                            aria-label={
-                              note
-                                ? `Edit note for ${tag.label} in ${jurisdictionLabel}`
-                                : `Add note for ${tag.label} in ${jurisdictionLabel}`
-                            }
-                            onClick={() =>
-                              setEditing({
-                                jurisdictionId: jId,
-                                issueTagId: tag.id,
-                                jurisdictionLabel,
-                                issueLabel: tag.label,
-                                note: note ?? null,
-                              })
-                            }
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
+                      <MatrixCell
+                        jurisdiction={jurisdiction}
+                        issueTag={tag}
+                        note={notesByCell.get(key)}
+                        instruments={instrumentsByCell.get(key) ?? []}
+                        canEdit={canEdit}
+                        onEdit={setEditing}
+                      />
                     </TableCell>
                   );
                 })}

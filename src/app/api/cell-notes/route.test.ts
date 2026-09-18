@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { upsert, deleteMany, findMany, auth } = vi.hoisted(() => ({
@@ -63,20 +64,37 @@ beforeEach(() => {
   findMany.mockResolvedValue([]);
 });
 
+function get(jurisdictionIds?: string) {
+  const url = jurisdictionIds
+    ? `http://localhost/api/cell-notes?jurisdictionIds=${encodeURIComponent(jurisdictionIds)}`
+    : "http://localhost/api/cell-notes";
+  return new Request(url);
+}
+
 describe("GET", () => {
   it("returns 401 without a session", async () => {
     signIn(null);
-    const response = await GET(
-      new Request("http://localhost/api/cell-notes")
-    );
+    const response = await GET(get("jur_1"));
     expect(response.status).toBe(401);
     expect(findMany).not.toHaveBeenCalled();
   });
 
-  it("allows a READER to read", async () => {
+  it("returns 400 without jurisdictionIds", async () => {
     signIn(READER);
-    const response = await GET(new Request("http://localhost/api/cell-notes"));
+    const response = await GET(get());
+    expect(response.status).toBe(400);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("allows a READER to read a bounded list", async () => {
+    signIn(READER);
+    const response = await GET(get("jur_1,jur_2"));
     expect(response.status).toBe(200);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { jurisdictionId: { in: ["jur_1", "jur_2"] } },
+      })
+    );
   });
 });
 
@@ -178,7 +196,12 @@ describe("PUT write", () => {
 
   it("maps a foreign key violation to a 400", async () => {
     signIn(EDITOR);
-    upsert.mockRejectedValue({ code: "P2003" });
+    upsert.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("fk", {
+        code: "P2003",
+        clientVersion: "test",
+      })
+    );
 
     const response = await PUT(put(validBody));
     expect(response.status).toBe(400);

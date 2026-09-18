@@ -9,6 +9,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/titleix_test
+      AUTH_SECRET: ci-auth-secret
+      AUTH_GOOGLE_ID: dummy
+      AUTH_GOOGLE_SECRET: dummy
     services:
       postgres:
         image: postgres:16-alpine
@@ -31,9 +36,8 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run db:generate
+      - run: npx prisma migrate deploy
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/titleix_test

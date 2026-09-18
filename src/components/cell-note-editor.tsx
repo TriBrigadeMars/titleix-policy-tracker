@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDate } from "@/lib/format-date";
 import { CELL_NOTE_MAX_LENGTH } from "@/lib/validation";
 import type { CellNote } from "@/types";
 
@@ -49,11 +50,6 @@ async function describeError(response: Response): Promise<string> {
   }
 
   return "Something went wrong. Try again.";
-}
-
-function formatDate(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleDateString();
 }
 
 /**

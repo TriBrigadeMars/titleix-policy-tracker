@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,53 +18,49 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
+import { MAX_COMPARISON_JURISDICTIONS } from "@/lib/search-params";
 import type { Jurisdiction } from "@/types";
 
 interface JurisdictionSelectorProps {
+  jurisdictions: Jurisdiction[];
+  /** Selected jurisdiction codes, in display order. */
   selected: string[];
   onChange: (selected: string[]) => void;
   maxSelections?: number;
 }
 
 export function JurisdictionSelector({
+  jurisdictions,
   selected,
   onChange,
-  maxSelections = 8,
+  maxSelections = MAX_COMPARISON_JURISDICTIONS,
 }: JurisdictionSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [jurisdictions, setJurisdictions] = useState<Jurisdiction[]>([]);
 
-  useEffect(() => {
-    fetch("/api/jurisdictions")
-      .then((res) => res.json())
-      .then(setJurisdictions)
-      .catch(console.error);
-  }, []);
+  const selectedJurisdictions = selected
+    .map((code) => jurisdictions.find((j) => j.code === code))
+    .filter((j): j is Jurisdiction => j != null);
 
-  const selectedJurisdictions = jurisdictions.filter((j) =>
-    selected.includes(j.id)
-  );
-
-  const toggle = (id: string) => {
-    if (selected.includes(id)) {
-      onChange(selected.filter((s) => s !== id));
+  const toggle = (code: string) => {
+    if (selected.includes(code)) {
+      onChange(selected.filter((s) => s !== code));
     } else if (selected.length < maxSelections) {
-      onChange([...selected, id]);
+      onChange([...selected, code]);
     }
   };
 
-  const remove = (id: string) => {
-    onChange(selected.filter((s) => s !== id));
+  const remove = (code: string) => {
+    onChange(selected.filter((s) => s !== code));
   };
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1">
         {selectedJurisdictions.map((j) => (
-          <Badge key={j.id} variant="secondary" className="gap-1">
+          <Badge key={j.code} variant="secondary" className="gap-1">
             {j.code}
             <button
-              onClick={() => remove(j.id)}
+              onClick={() => remove(j.code)}
               className="ml-1 rounded-full hover:bg-muted"
             >
               <X className="h-3 w-3" />
@@ -95,14 +91,14 @@ export function JurisdictionSelector({
               <CommandGroup>
                 {jurisdictions.map((j) => (
                   <CommandItem
-                    key={j.id}
+                    key={j.code}
                     value={`${j.code} ${j.name}`}
-                    onSelect={() => toggle(j.id)}
+                    onSelect={() => toggle(j.code)}
                   >
                     <Check
                       className={cn(
                         "mr-2 h-4 w-4",
-                        selected.includes(j.id) ? "opacity-100" : "opacity-0"
+                        selected.includes(j.code) ? "opacity-100" : "opacity-0"
                       )}
                     />
                     <span className="font-medium">{j.code}</span>

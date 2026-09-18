@@ -62,7 +62,16 @@ New users default to `READER`.
 1. Ingest adapters (Congress.gov, LegiScan, OpenStates, etc.) fetch instrument data
 2. Frontier/human editors triage new instruments for Title IX relevance
 3. Editors write cell notes comparing jurisdictions on each issue
-4. Public users view heatmap (50-state overview) and comparison matrix
+4. Signed-in users view the comparison matrix (heatmap is not built yet)
+
+Comparison reads are server-loaded. Selected jurisdictions live in the `j`
+search param as codes (`/?j=US,CA,TX`). `(protected)/page.tsx` resolves those
+codes, then `src/lib/queries.ts` loads issue tags, Title IX-relevant
+instruments, and cell notes in parallel. The client selector only updates the
+URL; it does not fetch.
+
+List APIs (`GET /api/instruments`, `GET /api/cell-notes`) use the same query
+helpers. They require `jurisdictionIds` (max 8) and never dump the full table.
 
 ## Write Path
 
@@ -81,8 +90,10 @@ Cell notes are the first, and currently the only, mutation in the app.
   whoever first wrote it, and `updatedAt` is what signals a later revision. If
   that proves insufficient, an `updatedById` column is the fix, and it would
   need the first Prisma migration.
-- Note bodies are capped at 10,000 characters at the schema layer, since
-  `@db.Text` is unbounded in Postgres.
+- Note bodies are capped at 10,000 characters in both zod and the database
+  (`@db.VarChar(10000)`). Instruments are unique on
+  `(jurisdictionId, type, identifier)` so ingest can upsert instead of
+  inventing dedup branches.
 
 The UI only renders edit affordances when the server says the viewer is an
 `EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a
@@ -101,9 +112,9 @@ two places where a regression would otherwise be silent:
   arguments, with `auth` and Prisma mocked. Asserts that `authorId` comes from
   the session and is never taken from the request.
 
-There is no database-backed integration test yet, and CI does not apply the
-schema, so nothing currently verifies that the schema applies to a real
-Postgres.
+There is no database-backed integration test yet. CI runs `prisma migrate deploy`
+against the workflow Postgres service before lint/typecheck/build/test, so the
+checked-in migration must apply.
 
 ## Security
 
