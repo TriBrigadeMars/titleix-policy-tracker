@@ -1,3 +1,5 @@
+import type { UserRole } from "@/lib/roles";
+
 export interface Jurisdiction {
   id: string;
   code: string;
@@ -70,4 +72,14 @@ export interface HeatmapSummary {
   pendingCount: number;
   issueTagCount: number;
   cellNoteCount: number;
+}
+
+export interface UserSummary {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
 }

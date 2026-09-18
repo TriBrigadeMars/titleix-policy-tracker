@@ -6,6 +6,7 @@ import {
   formatIssues,
   instrumentNoteCreateSchema,
   instrumentTriageSchema,
+  userRoleUpdateSchema,
 } from "./validation";
 
 const valid = {
@@ -195,6 +196,40 @@ describe("instrumentNoteCreateSchema", () => {
         authorId: "attacker_id",
       }).success
     ).toBe(false);
+  });
+});
+
+describe("userRoleUpdateSchema", () => {
+  it("accepts valid roles", () => {
+    for (const role of ["READER", "EDITOR", "ADMIN"]) {
+      const result = userRoleUpdateSchema.safeParse({ role });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects invalid role strings", () => {
+    for (const role of ["SUPERADMIN", "USER", "owner", "", "reader"]) {
+      expect(userRoleUpdateSchema.safeParse({ role }).success).toBe(false);
+    }
+  });
+
+  it("rejects extra fields", () => {
+    expect(
+      userRoleUpdateSchema.safeParse({
+        role: "EDITOR",
+        extraField: "not_allowed",
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects missing role", () => {
+    expect(userRoleUpdateSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("rejects non-object input", () => {
+    for (const val of [null, undefined, "ADMIN", 123, []]) {
+      expect(userRoleUpdateSchema.safeParse(val).success).toBe(false);
+    }
   });
 });
 

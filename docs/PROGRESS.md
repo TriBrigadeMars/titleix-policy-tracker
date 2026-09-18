@@ -2,7 +2,7 @@
 
 Title IX Policy Tracker is a signed-in Next.js 15 app (App Router, Prisma/Postgres, Auth.js Google OAuth, Tailwind/shadcn) for comparing state and federal law that can affect Title IX.
 
-Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, and **50-state heatmap** slices are real and structurally sound. Admin role management and public view are not.
+Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, **50-state heatmap**, and **admin user-role management** slices are real and structurally sound. Public view is not.
 
 Merged through [PR #6](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/6) on `main`.
 
@@ -71,7 +71,6 @@ That was rejected as a foundation. The replacement rules still apply:
 
 | Gap | Notes |
 |-----|--------|
-| Admin | `ADMIN` equals `EDITOR` in practice. No user-role management. |
 | Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
 | Integration tests | CI applies migrations but tests never hit Postgres. |
 | Extra instrument types | `GUIDANCE`, `EXECUTIVE_ORDER`, `COURT_ORDER` need an explicit migration when needed. |
@@ -128,11 +127,22 @@ That was rejected as a foundation. The replacement rules still apply:
 - `src/types/index.ts` — `HeatmapSummary` interface exported for clean DTO boundaries.
 - `src/components/site-header.tsx` — "Heatmap" link added to the main navigation for all authenticated users.
 
+## Admin User-Role Management
+
+- `src/app/(protected)/admin/page.tsx` — RSC page for viewing and filtering all registered users. Authoritatively gated to `ADMIN` role (redirects non-admins).
+- `src/components/admin-user-table.tsx` — client component with real-time role updating (`READER`, `EDITOR`, `ADMIN`), search filter, role filter, clear filters, and self-demotion prevention indicator.
+- `src/components/site-header.tsx` — "Admin" link in main navigation rendered only for users with `ADMIN` role.
+- `GET /api/admin/users` — ADMIN-only endpoint for listing users with bounded search, role, and pagination limit filters via `parseUserListQuery`.
+- `GET /api/admin/users/[id]` & `PATCH /api/admin/users/[id]` — ADMIN-only endpoints for viewing and updating user roles. Enforces self-demotion prevention (`guard.user.id === id && role !== "ADMIN"`).
+- Strict zod schema in `src/lib/validation.ts`: `userRoleUpdateSchema` (`z.strictObject`).
+- Query layer in `src/lib/queries.ts`: `userListWhere`, `getUsers`, `getUserById`, `userSummarySelect`, `toUserSummary`.
+- Tests: route unit tests for `GET /api/admin/users`, `GET /api/admin/users/[id]`, and `PATCH /api/admin/users/[id]` covering 401/403/400/404/self-demotion/success; validation tests; query where builder tests; and search-param parsing tests.
+
 ## Suggested next slice
 
-1. Admin role changes (promote/demote users, ADMIN only).
-2. Postgres integration tests for migrate + upsert ingest.
-3. More ingest adapters (LegiScan, OpenStates) — now just implement
+1. Postgres integration tests for migrate + upsert ingest.
+2. More ingest adapters (LegiScan, OpenStates) — now just implement
    `IngestAdapter` and add a route; the upsert path is reusable.
+3. Public heatmap/matrix view for anonymous users.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.

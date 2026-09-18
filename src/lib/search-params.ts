@@ -1,3 +1,5 @@
+import { ALL_ROLES, type UserRole } from "./roles";
+
 /** Product cap for comparison columns (and thus jurisdiction list filters). */
 export const MAX_COMPARISON_JURISDICTIONS = 8;
 
@@ -109,4 +111,35 @@ export function parseTriageQuery(searchParams: URLSearchParams): TriageQuery {
     : DEFAULT_TRIAGE_LIMIT;
 
   return { jurisdictionCode, status, relevance, limit };
+}
+
+export const DEFAULT_USER_LIST_LIMIT = 50;
+export const MAX_USER_LIST_LIMIT = 100;
+
+export interface UserListQuery {
+  search?: string;
+  role?: UserRole;
+  limit: number;
+}
+
+export function parseUserListQuery(
+  searchParams: URLSearchParams
+): UserListQuery {
+  const rawSearch = searchParams.get("search")?.trim();
+  const search =
+    rawSearch && rawSearch.length <= 100 ? rawSearch : undefined;
+
+  const rawRole = searchParams.get("role")?.trim().toUpperCase();
+  const role: UserRole | undefined =
+    rawRole && ALL_ROLES.includes(rawRole as UserRole)
+      ? (rawRole as UserRole)
+      : undefined;
+
+  const rawLimit = Number.parseInt(searchParams.get("limit") ?? "", 10);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, MAX_USER_LIST_LIMIT)
+      : DEFAULT_USER_LIST_LIMIT;
+
+  return { search, role, limit };
 }
