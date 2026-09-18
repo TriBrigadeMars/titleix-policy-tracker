@@ -71,7 +71,6 @@ That was rejected as a foundation. The replacement rules still apply:
 
 | Gap | Notes |
 |-----|--------|
-| Ingest adapters | Congress.gov, LegiScan, OpenStates, etc. Schema is ready (unique key, `lastCheckedAt`). No adapter code. |
 | Triage UI | No way to set `isTitleIXRelevant`, confidence, or instrument issue tags. |
 | Instrument notes | Model exists. No API or UI. |
 | Heatmap | 50-state overview from ARCHITECTURE.md. Not started. |
@@ -93,12 +92,34 @@ That was rejected as a foundation. The replacement rules still apply:
 | Dates in UI | `src/lib/format-date.ts` |
 | Domain rules | `ARCHITECTURE.md` |
 
+## Ingest (Congress.gov federal bills)
+
+- `src/lib/ingest/index.ts` — the data layer. `RawInstrument` type
+  (source-agnostic, keyed by jurisdiction code), `IngestAdapter` interface,
+  and `upsertInstruments()` which resolves jurisdiction codes to ids, then
+  upserts on `(jurisdictionId, type, identifier)` inside a single transaction.
+- Machine fields (title, status, dates, sourceUrl, rawSummary, lastCheckedAt)
+  are overwritten on update. Editor fields (isTitleIXRelevant,
+  relevanceConfidence) are never touched by ingest — that is human triage.
+- `src/lib/ingest/congress.ts` — `mapCongressBills()` pure mapper
+  (Congress.gov bills JSON → `RawInstrument[]`, skips malformed bills) and
+  `congressAdapter` implementing `IngestAdapter` (fetches via Congress.gov v3
+  API, optional `CONGRESS_GOV_API_KEY` env).
+- `POST /api/ingest/congress` — ADMIN-only trigger. Query params `congress`
+  (default 119) and `limit` (default 50, capped at 100). Returns
+  `{ source, total, upserted, skipped }`. Returns 502 on upstream failure.
+- Tests: `upsertInstruments` (mocked Prisma — jurisdiction resolution, unique
+  key, editor-field preservation, skip-on-unknown-code, transaction), Congress
+  mapping (table-driven, 7 cases), route authz (401/403/ADMIN/502/param
+  clamping).
+
 ## Suggested next slice
 
-1. Ingest: one adapter interface + Congress.gov federal bills, upserting on the unique key.
-2. Editor triage: mark relevance, attach issue tags, write `InstrumentNote`.
-3. Heatmap that consumes the same query layer (do not fetch from the client).
-4. Admin role changes.
-5. Postgres integration tests for migrate + upsert ingest.
+1. Editor triage: mark relevance, attach issue tags, write `InstrumentNote`.
+2. Heatmap that consumes the same query layer (do not fetch from the client).
+3. Admin role changes.
+4. Postgres integration tests for migrate + upsert ingest.
+5. More ingest adapters (LegiScan, OpenStates) — now just implement
+   `IngestAdapter` and add a route; the upsert path is reusable.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
