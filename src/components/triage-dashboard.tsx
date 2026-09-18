@@ -16,6 +16,7 @@ import {
 import { InstrumentTriageEditor } from "@/components/instrument-triage-editor";
 import { formatDate } from "@/lib/format-date";
 import type { TriageQuery } from "@/lib/search-params";
+import { triageStatus } from "@/lib/triage";
 import type { Instrument, IssueTag, Jurisdiction } from "@/types";
 
 const STATUS_COLORS: Record<Instrument["status"], string> = {
@@ -197,8 +198,10 @@ export function TriageDashboard({
           <div className="grid grid-cols-1 gap-4">
             {instruments.map((inst) => {
               const hasNotes = (inst.notes?.length ?? 0) > 0;
-              const isUnreviewed =
-                !inst.isTitleIXRelevant && inst.relevanceConfidence === null;
+                          const status = triageStatus(
+                            inst.isTitleIXRelevant,
+                            inst.relevanceConfidence
+                          );
 
               return (
                 <Card
@@ -224,14 +227,14 @@ export function TriageDashboard({
                         </span>
 
                         {/* Relevance badge */}
-                        {isUnreviewed ? (
+                                                {status === "unreviewed" ? (
                           <Badge
                             variant="outline"
                             className="border-amber-500/50 text-amber-600 dark:text-amber-400 gap-1"
                           >
                             <HelpCircle className="h-3 w-3" /> Unreviewed
                           </Badge>
-                        ) : inst.isTitleIXRelevant ? (
+                                                ) : status === "relevant" ? (
                           <Badge
                             variant="secondary"
                             className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 gap-1"

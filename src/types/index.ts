@@ -72,6 +72,7 @@ export interface HeatmapSummary {
   pendingCount: number;
   issueTagCount: number;
   cellNoteCount: number;
+  totalIssueTags: number;
 }
 
 export interface UserSummary {

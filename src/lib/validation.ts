@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ALL_ROLES } from "./roles";
+
 /**
  * Cell notes are the first endpoint that accepts a request body, so this is the
  * first place input validation matters. Everything downstream of here (Prisma)
@@ -58,7 +60,7 @@ export const instrumentNoteCreateSchema = z.strictObject({
 export type InstrumentNoteCreateInput = z.infer<typeof instrumentNoteCreateSchema>;
 
 export const userRoleUpdateSchema = z.strictObject({
-  role: z.enum(["READER", "EDITOR", "ADMIN"]),
+  role: z.enum(ALL_ROLES),
 });
 
 export type UserRoleUpdateInput = z.infer<typeof userRoleUpdateSchema>;

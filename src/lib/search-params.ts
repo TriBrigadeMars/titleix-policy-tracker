@@ -8,6 +8,19 @@ export const MAX_ISSUE_TAG_FILTERS = 32;
 
 const MAX_ID_LENGTH = 64;
 
+/**
+ * Parse a `limit` query param into a positive, bounded integer. Missing or
+ * non-positive values fall back to `fallback`; anything above `max` is clamped.
+ */
+function parseBoundedLimit(
+  value: string | null,
+  max: number,
+  fallback: number
+): number {
+  const raw = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(raw) && raw > 0 ? Math.min(raw, max) : fallback;
+}
+
 /** Parse a comma-separated query param into a trimmed, unique, non-empty id list. */
 export function parseIdList(value: string | null): string[] {
   if (!value) return [];
@@ -105,12 +118,13 @@ export function parseTriageQuery(searchParams: URLSearchParams): TriageQuery {
       ? (rawRelevance as TriageRelevanceFilter)
       : "unreviewed";
 
-  const rawLimit = Number.parseInt(searchParams.get("limit") ?? "", 10);
-  const limit = Number.isFinite(rawLimit) && rawLimit > 0
-    ? Math.min(rawLimit, MAX_TRIAGE_LIMIT)
-    : DEFAULT_TRIAGE_LIMIT;
+  const limit = parseBoundedLimit(
+      searchParams.get("limit"),
+      MAX_TRIAGE_LIMIT,
+      DEFAULT_TRIAGE_LIMIT
+    );
 
-  return { jurisdictionCode, status, relevance, limit };
+    return { jurisdictionCode, status, relevance, limit };
 }
 
 export const DEFAULT_USER_LIST_LIMIT = 50;
@@ -135,11 +149,11 @@ export function parseUserListQuery(
       ? (rawRole as UserRole)
       : undefined;
 
-  const rawLimit = Number.parseInt(searchParams.get("limit") ?? "", 10);
-  const limit =
-    Number.isFinite(rawLimit) && rawLimit > 0
-      ? Math.min(rawLimit, MAX_USER_LIST_LIMIT)
-      : DEFAULT_USER_LIST_LIMIT;
+  const limit = parseBoundedLimit(
+      searchParams.get("limit"),
+      MAX_USER_LIST_LIMIT,
+      DEFAULT_USER_LIST_LIMIT
+    );
 
   return { search, role, limit };
 }

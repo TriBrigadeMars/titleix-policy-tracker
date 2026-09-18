@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { requireRole, requireUser } from "@/lib/auth-guards";
+import { requireRole } from "@/lib/auth-guards";
 import {
   instrumentWithNotesInclude,
   toInstrument,
@@ -10,27 +10,6 @@ import { formatIssues, instrumentTriageSchema } from "@/lib/validation";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
-}
-
-export async function GET(request: Request, context: RouteContext) {
-  const guard = await requireUser();
-  if (!guard.ok) return guard.response;
-
-  const { id } = await context.params;
-  if (!id) {
-    return NextResponse.json({ error: "Missing instrument id" }, { status: 400 });
-  }
-
-  const instrument = await prisma.instrument.findUnique({
-    where: { id },
-    include: instrumentWithNotesInclude,
-  });
-
-  if (!instrument) {
-    return NextResponse.json({ error: "Instrument not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(toInstrument(instrument));
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

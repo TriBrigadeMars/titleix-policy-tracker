@@ -21,7 +21,7 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/auth", () => ({ auth }));
 
-import { GET, PATCH } from "./route";
+import { PATCH } from "./route";
 
 const EDITOR = {
   id: "editor-1",
@@ -85,12 +85,6 @@ function patch(id: string, body: unknown) {
   });
 }
 
-function get(id: string) {
-  return new Request(`http://localhost/api/instruments/${id}`, {
-    method: "GET",
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   findUnique.mockResolvedValue(mockInstrument);
@@ -102,35 +96,6 @@ beforeEach(() => {
       instrument: { findUnique, update },
       instrumentIssueTag: { deleteMany, createMany },
     });
-  });
-});
-
-describe("GET /api/instruments/[id]", () => {
-  it("rejects unauthenticated requests with 401", async () => {
-    signIn(null);
-    const res = await GET(get("inst-1"), {
-      params: Promise.resolve({ id: "inst-1" }),
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it("returns 404 when instrument does not exist", async () => {
-    signIn(READER);
-    findUnique.mockResolvedValue(null);
-    const res = await GET(get("missing"), {
-      params: Promise.resolve({ id: "missing" }),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it("returns instrument for signed in reader", async () => {
-    signIn(READER);
-    const res = await GET(get("inst-1"), {
-      params: Promise.resolve({ id: "inst-1" }),
-    });
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.identifier).toBe("HB 100");
   });
 });
 
