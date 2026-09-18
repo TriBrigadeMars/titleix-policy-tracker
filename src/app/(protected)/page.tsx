@@ -1,61 +1,10 @@
-"use client";
+import { auth } from "@/lib/auth";
+import { DEFAULT_ROLE, hasRole } from "@/lib/roles";
+import { Dashboard } from "@/components/dashboard";
 
-import { useState, useEffect } from "react";
-import { JurisdictionSelector } from "@/components/jurisdiction-selector";
-import { ComparisonMatrix } from "@/components/comparison-matrix";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { Jurisdiction } from "@/types";
+export default async function Home() {
+  const session = await auth();
+  const role = session?.user?.role ?? DEFAULT_ROLE;
 
-export default function Home() {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [jurisdictionCodes, setJurisdictionCodes] = useState<
-    Record<string, string>
-  >({});
-
-  useEffect(() => {
-    fetch("/api/jurisdictions")
-      .then((res) => res.json())
-      .then((data: Jurisdiction[]) => {
-        const codes: Record<string, string> = {};
-        data.forEach((j) => {
-          codes[j.id] = j.code;
-        });
-        setJurisdictionCodes(codes);
-      })
-      .catch(console.error);
-  }, []);
-
-  return (
-    <main className="container mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-2">Title IX Policy Tracker</h1>
-      <p className="text-muted-foreground mb-8">
-        Compare proposed and passed laws impacting Title IX across
-        jurisdictions.
-      </p>
-
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle>Select Jurisdictions to Compare</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <JurisdictionSelector
-            selected={selectedIds}
-            onChange={setSelectedIds}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Comparison Matrix</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ComparisonMatrix
-            jurisdictionIds={selectedIds}
-            jurisdictionCodes={jurisdictionCodes}
-          />
-        </CardContent>
-      </Card>
-    </main>
-  );
+  return <Dashboard canEdit={hasRole(role, "EDITOR")} />;
 }
