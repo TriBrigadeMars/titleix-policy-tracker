@@ -101,20 +101,20 @@ Machine ingest is the second mutation surface. It does not touch editor-owned
 fields (`isTitleIXRelevant`, `relevanceConfidence`); it only writes
 machine-known fields and `lastCheckedAt`.
 
-- **Adapter interface** (`src/lib/ingest/types.ts`): `IngestAdapter.fetch()`
-  returns `RawInstrument[]` — a source-agnostic shape. No database access lives
-  in the adapter.
-- **Congress.gov adapter** (`src/lib/ingest/congress-gov.ts`): fetches federal
+- **Adapter interface + upsert** (`src/lib/ingest/index.ts`):
+  `IngestAdapter.fetch()` returns `RawInstrument[]` — a source-agnostic shape.
+  No database access lives in the adapter. `upsertInstruments()` resolves
+  jurisdiction codes to ids in one query, then upserts on
+  `(jurisdictionId, type, identifier)` inside a `$transaction`. On update, sets
+  machine fields + `lastCheckedAt`; does not touch `isTitleIXRelevant` or
+  `relevanceConfidence`.
+- **Congress.gov adapter** (`src/lib/ingest/congress.ts`): fetches federal
   bills from the Congress.gov v3 API, maps each bill to `RawInstrument` via a
-  pure `mapBillToRawInstrument` function. The identifier is
-  `${congress}-${type}-${number}` (e.g. `119-HR-1234`). Status is inferred from
-  `latestAction.text` as a best-effort heuristic; editors triage.
-- **Upsert** (`src/lib/ingest/upsert.ts`): resolves jurisdiction codes to ids
-  in one query, then upserts on `(jurisdictionId, type, identifier)` inside a
-  `$transaction`. On update, sets machine fields + `lastCheckedAt`; does not
-  touch `isTitleIXRelevant` or `relevanceConfidence`.
-- **Trigger** (`POST /api/ingest`): ADMIN-only. Optional `?congress=N`. Requires
-  `CONGRESS_GOV_API_KEY` env var.
+  pure `mapCongressBills` function. The identifier is
+  `${type}-${number}-${congress}` (e.g. `HR-1234-119`). Status defaults to
+  `PROPOSED`; editors triage.
+- **Trigger** (`POST /api/ingest/congress`): ADMIN-only. Optional `?congress=N`.
+  Requires `CONGRESS_GOV_API_KEY` env var.
 
 The UI only renders edit affordances when the server says the viewer is an
 `EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a

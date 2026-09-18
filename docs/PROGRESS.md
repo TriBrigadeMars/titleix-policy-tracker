@@ -6,8 +6,6 @@ Honest status: the **read/compare + cell-note write** slice is real and structur
 
 Merged through [PR #6](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/6) on `main`.
 
-Ingest slice (Congress.gov adapter + upsert) added after PR #7.
-
 ## What exists
 
 ### Auth and roles
@@ -51,14 +49,6 @@ Cell notes are the only mutation.
 - Strict zod in `src/lib/validation.ts` (`z.strictObject`).
 - List GETs for instruments and cell notes require `jurisdictionIds` (max 8) and share `src/lib/queries.ts`. Instruments default to `isTitleIXRelevant: true`.
 
-### Ingest (Congress.gov)
-
-- `src/lib/ingest/types.ts` — `RawInstrument` (source-agnostic) and `IngestAdapter` interface.
-- `src/lib/ingest/congress-gov.ts` — `CongressGovAdapter` fetches federal bills from the Congress.gov v3 API and maps them to `RawInstrument[]`. The mapping is a pure function (`mapBillToRawInstrument`) tested with fixtures; the HTTP fetch is a thin layer.
-- `src/lib/ingest/upsert.ts` — `upsertInstruments()` resolves jurisdiction codes to ids in one query, then upserts on `(jurisdictionId, type, identifier)` inside a `$transaction`. On update, sets machine-known fields + `lastCheckedAt`; does NOT touch `isTitleIXRelevant` or `relevanceConfidence` (editor-owned).
-- `POST /api/ingest` — ADMIN-only trigger. Optional `?congress=N` query param. Requires `CONGRESS_GOV_API_KEY`.
-- Status mapping is a best-effort heuristic from `latestAction.text`: "Became Public Law" / "Signed by" → PASSED, "Vetoed" → ENJOINED, "Repealed" → REPEALED, default → PROPOSED. Editors triage and correct.
-
 ### Tests
 
 Vitest, mocked Prisma/auth. Covers roles, cell-note validation, cell-note 401/403/upsert author, comparison query parsing, and typed `where` builders.
@@ -81,14 +71,12 @@ That was rejected as a foundation. The replacement rules still apply:
 
 | Gap | Notes |
 |-----|--------|
-| ~~Ingest adapters~~ | **Done:** Congress.gov federal bills. Remaining: LegiScan, OpenStates, etc. for state-level. |
 | Triage UI | No way to set `isTitleIXRelevant`, confidence, or instrument issue tags. |
 | Instrument notes | Model exists. No API or UI. |
 | Heatmap | 50-state overview from ARCHITECTURE.md. Not started. |
 | Admin | `ADMIN` equals `EDITOR` in practice. No user-role management. |
 | Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
 | Integration tests | CI applies migrations but tests never hit Postgres. |
-| State-level ingest | LegiScan/OpenStates adapters for state bills. Schema is ready. |
 | Extra instrument types | `GUIDANCE`, `EXECUTIVE_ORDER`, `COURT_ORDER` need an explicit migration when needed. |
 
 ## Canonical files (do not fork)
@@ -102,18 +90,36 @@ That was rejected as a foundation. The replacement rules still apply:
 | Auth config | `src/lib/auth.ts` |
 | Client DTOs | `src/types/index.ts` |
 | Dates in UI | `src/lib/format-date.ts` |
-| Ingest types | `src/lib/ingest/types.ts` |
-| Ingest upsert | `src/lib/ingest/upsert.ts` |
-| Congress.gov adapter | `src/lib/ingest/congress-gov.ts` |
 | Domain rules | `ARCHITECTURE.md` |
+
+## Ingest (Congress.gov federal bills)
+
+- `src/lib/ingest/index.ts` — the data layer. `RawInstrument` type
+  (source-agnostic, keyed by jurisdiction code), `IngestAdapter` interface,
+  and `upsertInstruments()` which resolves jurisdiction codes to ids, then
+  upserts on `(jurisdictionId, type, identifier)` inside a single transaction.
+- Machine fields (title, status, dates, sourceUrl, rawSummary, lastCheckedAt)
+  are overwritten on update. Editor fields (isTitleIXRelevant,
+  relevanceConfidence) are never touched by ingest — that is human triage.
+- `src/lib/ingest/congress.ts` — `mapCongressBills()` pure mapper
+  (Congress.gov bills JSON → `RawInstrument[]`, skips malformed bills) and
+  `congressAdapter` implementing `IngestAdapter` (fetches via Congress.gov v3
+  API, optional `CONGRESS_GOV_API_KEY` env).
+- `POST /api/ingest/congress` — ADMIN-only trigger. Query params `congress`
+  (default 119) and `limit` (default 50, capped at 100). Returns
+  `{ source, total, upserted, skipped }`. Returns 502 on upstream failure.
+- Tests: `upsertInstruments` (mocked Prisma — jurisdiction resolution, unique
+  key, editor-field preservation, skip-on-unknown-code, transaction), Congress
+  mapping (table-driven, 7 cases), route authz (401/403/ADMIN/502/param
+  clamping).
 
 ## Suggested next slice
 
-1. ~~Ingest: one adapter interface + Congress.gov federal bills, upserting on the unique key.~~ **Done.**
-2. Editor triage: mark relevance, attach issue tags, write `InstrumentNote`.
-3. Heatmap that consumes the same query layer (do not fetch from the client).
-4. Admin role changes.
-5. Postgres integration tests for migrate + upsert ingest.
-6. State-level ingest adapters (LegiScan, OpenStates) once triage exists.
+1. Editor triage: mark relevance, attach issue tags, write `InstrumentNote`.
+2. Heatmap that consumes the same query layer (do not fetch from the client).
+3. Admin role changes.
+4. Postgres integration tests for migrate + upsert ingest.
+5. More ingest adapters (LegiScan, OpenStates) — now just implement
+   `IngestAdapter` and add a route; the upsert path is reusable.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
