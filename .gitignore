@@ -2,6 +2,11 @@
 node_modules
 .env*
 !.env.example
+!.env.desktop.example
 .DS_Store
+
+electron-dist/
+dist-desktop/
+.env.desktop
 
 tsconfig.tsbuildinfo
