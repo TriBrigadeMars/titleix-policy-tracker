@@ -74,9 +74,10 @@ New users default to `READER`.
 1. Ingest adapters (Congress.gov, LegiScan, OpenStates, etc.) fetch instrument data
 2. Frontier/human editors triage new instruments for Title IX relevance
 3. Editors write cell notes comparing jurisdictions on each issue
-4. Signed-in users view the comparison matrix and the 50-state heatmap
+4. Anyone — signed in or not — reads the comparison matrix and the 50-state
+   heatmap; write routes stay behind a session
 
-The heatmap exists: `(protected)/heatmap/page.tsx` renders
+The heatmap exists: `(public)/heatmap/page.tsx` renders
 `src/components/state-heatmap.tsx` from `getHeatmapSummaries()` in
 `src/lib/queries.ts`, which aggregates per-jurisdiction counts
 (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) plus a
@@ -85,7 +86,7 @@ raw SQL, no schema migration. The tooltip renders "X of N" from
 `totalIssueTags` rather than a hardcoded 8.
 
 Comparison reads are server-loaded. Selected jurisdictions live in the `j`
-search param as codes (`/?j=US,CA,TX`). `(protected)/page.tsx` resolves those
+search param as codes (`/?j=US,CA,TX`). `(public)/page.tsx` resolves those
 codes, then `src/lib/queries.ts` loads issue tags, Title IX-relevant
 instruments, and cell notes in parallel. The client selector only updates the
 URL; it does not fetch.
@@ -165,7 +166,7 @@ machine-known fields and `lastCheckedAt`.
 
 
 The UI only renders edit affordances when the server says the viewer is an
-`EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a
+`EDITOR` (`canEdit` in `(public)/page.tsx`). That is a display concern, not a
 security boundary; the API guard is what authorizes the write.
 
 ## Testing
@@ -204,7 +205,7 @@ Access is enforced in three places, in order:
 
 | Layer | File | Scope |
 |-------|------|-------|
-| Edge middleware | `src/middleware.ts` | Fast-path only: redirects to `/sign-in` (or returns 401 JSON for `/api/*`) when no session cookie is present. Does **not** validate the session. |
+| Edge middleware | `src/middleware.ts` | Fast-path only: redirects to `/sign-in` (or returns 401 JSON for `/api/*`) when no session cookie is present. Does **not** validate the session. `/`, `/heatmap`, `/sign-in`, and `/api/auth` are allowed without a cookie — `/` matches exactly, so it never opens `/triage` or `/admin`. |
 | Route-group layout | `src/app/(protected)/layout.tsx` | Authoritative page gate. Calls `auth()` and redirects unauthenticated users. |
 | API guards | `src/lib/auth-guards.ts` | Authoritative API gate. `requireUser()` / `requireRole()` return a typed result the handler can return directly. |
 

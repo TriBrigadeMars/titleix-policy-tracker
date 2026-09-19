@@ -11,17 +11,32 @@ import { NextResponse, type NextRequest } from "next/server";
  * database (Prisma adapter), and the edge runtime cannot reach it.
  */
 
-const PUBLIC_PREFIXES = ["/sign-in", "/api/auth"];
+const PUBLIC_PREFIXES = ["/sign-in", "/heatmap", "/api/auth"];
+
+/**
+ * Exact paths that are public. The comparison matrix lives at `/`, so this is
+ * matched exactly: a prefix match on "/" would make `/triage` and `/admin`
+ * public too.
+ */
+const PUBLIC_EXACT = ["/"];
 
 const SESSION_COOKIES = [
   "authjs.session-token",
   "__Secure-authjs.session-token",
 ];
 
+/** Whether `pathname` is readable without a session. */
+export function isPublicPath(pathname: string): boolean {
+  return (
+    PUBLIC_EXACT.includes(pathname) ||
+    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  );
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
