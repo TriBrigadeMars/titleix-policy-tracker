@@ -333,7 +333,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       identifier: `hr-${RUN_ID}-119`,
       title: "Title IX Accountability Act",
       status: "PROPOSED",
-      sourceUrl: `https://www.congress.gov/bill/119th-congress/hr/${RUN_ID}`,
+      sourceUrl: `https://www.congress.gov/bill/119th-congress/house-bill/${RUN_ID}`,
       rawSummary: "Referred to the Committee on Education and the Workforce.",
       isTitleIXRelevant: false,
     });
