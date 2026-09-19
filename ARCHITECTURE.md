@@ -13,7 +13,7 @@
 
 ### Jurisdictions
 
-- `US` (federal) + all 50 states
+- `US` (federal) + all 50 states + `DC` (seeded as `STATE`)
 - Each has a code, name, and level (`FEDERAL` | `STATE`)
 
 ### Issue Tags (Matrix Rows)
@@ -34,11 +34,23 @@ Legal/policy items tracked per jurisdiction:
 - **Types:** `BILL`, `STATUTE`, `REGULATION` (enum — adding values requires a migration)
 - **Status:** `PROPOSED`, `PASSED`, `EFFECTIVE`, `ENJOINED`, `REPEALED`
 - **Fields:** identifier, title, status, dates, source URL, last checked, Title IX relevance flag + confidence
+- **Unique keys:** `(jurisdictionId, type, identifier)` is the identity ingest upserts on.
+  `(source, sourceId)` is a second, optional unique key for adapters that have a
+  stable upstream id (Congress.gov, LegiScan, OpenStates all set it). It is
+  nullable, so rows without a source id are unaffected.
+- **Triage encoding:** `TriageStatus` (`UNREVIEWED` | `RELEVANT` | `NOT_RELEVANT`)
+  is the editor-owned relevance encoding, centralized in `src/lib/triage.ts`
+  (`triageStatus()` / `triageWhere()`). `isTitleIXRelevant` remains on the row
+  because the matrix query filters on it directly. The two are kept in sync by
+  the triage endpoint, and ingest must not overwrite triage fields or `status`
+  on update.
 
 ### Notes
 
-- **InstrumentNote:** per-instrument editor comments (triage, verification)
-- **CellNote:** per-cell (jurisdiction × issue tag) comparison notes — the human-written content shown in the matrix
+- **InstrumentNote:** per-instrument editor comments (triage, verification).
+  `authorId` is optional and `onDelete: SetNull`, so deleting a user keeps the
+  note rather than cascading it away.
+- **CellNote:** per-cell (jurisdiction × issue tag) comparison notes — the human-written content shown in the matrix. `authorId` is also `onDelete: SetNull`.
 
 ### Users & Roles
 
@@ -62,7 +74,15 @@ New users default to `READER`.
 1. Ingest adapters (Congress.gov, LegiScan, OpenStates, etc.) fetch instrument data
 2. Frontier/human editors triage new instruments for Title IX relevance
 3. Editors write cell notes comparing jurisdictions on each issue
-4. Signed-in users view the comparison matrix (heatmap is not built yet)
+4. Signed-in users view the comparison matrix and the 50-state heatmap
+
+The heatmap exists: `(protected)/heatmap/page.tsx` renders
+`src/components/state-heatmap.tsx` from `getHeatmapSummaries()` in
+`src/lib/queries.ts`, which aggregates per-jurisdiction counts
+(`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) plus a
+shared `totalIssueTags` with parallel Prisma queries and in-memory joins — no
+raw SQL, no schema migration. The tooltip renders "X of N" from
+`totalIssueTags` rather than a hardcoded 8.
 
 Comparison reads are server-loaded. Selected jurisdictions live in the `j`
 search param as codes (`/?j=US,CA,TX`). `(protected)/page.tsx` resolves those
@@ -105,22 +125,44 @@ machine-known fields and `lastCheckedAt`.
   `IngestAdapter.fetch()` returns `RawInstrument[]` — a source-agnostic shape.
   No database access lives in the adapter. `upsertInstruments()` resolves
   jurisdiction codes to ids in one query, then upserts on
-  `(jurisdictionId, type, identifier)` inside a `$transaction`. On update, sets
-  machine fields + `lastCheckedAt`; does not touch `isTitleIXRelevant` or
-  `relevanceConfidence`.
+  `(jurisdictionId, type, identifier)`. On update, sets machine fields +
+  `lastCheckedAt`; does not touch `isTitleIXRelevant`, `relevanceConfidence`,
+  `triageStatus`, or `status`.
+- **Chunked writes:** rows are written in `INGEST_CHUNK_SIZE` (50) row
+  `$transaction`s, one transaction per chunk. A chunk that throws leaves earlier
+  chunks committed and the error is rethrown, never swallowed. Retrying the same
+  ingest is safe because the write is idempotent (unique key + machine-only
+  update path), so a retry converges instead of duplicating rows.
+- **Fetch timeout:** adapters abort upstream calls after `FETCH_TIMEOUT_MS`
+  (10s) via `AbortSignal.timeout()`, so a hung API cannot stall an ingest.
+- **Shared route plumbing** (`src/lib/ingest/route-helpers.ts`):
+  `INGEST_GENERIC_ERROR` and `paramInt()` (clamp + truncate, fallback on
+  non-finite) are shared by all three trigger routes. The routes keep their own
+  limits; the handlers are deliberately not merged.
 - **Congress.gov adapter** (`src/lib/ingest/congress.ts`): fetches federal
   bills from the Congress.gov v3 API, maps each bill to `RawInstrument` via a
   pure `mapCongressBills` function. The identifier is
   `${type}-${number}-${congress}` (e.g. `HR-1234-119`). Status defaults to
-  `PROPOSED`; editors triage.
+  `PROPOSED`; editors triage. Requires `CONGRESS_GOV_API_KEY`.
 - **Trigger** (`POST /api/ingest/congress`): ADMIN-only. Optional `?congress=N`.
-  Requires `CONGRESS_GOV_API_KEY` env var.
 - **State adapters** (`src/lib/ingest/openstates.ts`, `src/lib/ingest/legiscan.ts`):
   fetch state bills from OpenStates v3 and LegiScan, deriving the two-letter
   jurisdiction code from the source. Shared helpers (state-code derivation and
-  LegiScan status mapping) live in `src/lib/ingest/state.ts`. Both are ADMIN-only
-  triggers (`POST /api/ingest/openstates`, `POST /api/ingest/legiscan`) and keyed
-  by `OPEN_STATES_API_KEY` / `LEGISCAN_API_KEY`.
+  LegiScan status mapping) live in `src/lib/ingest/state.ts`.
+  - `POST /api/ingest/openstates` — ADMIN-only, keyed by `OPEN_STATES_API_KEY`.
+    `jurisdiction` is **required** (400 without it); there is no silent `nc`
+    default. Optional `session` and `limit` (default 50, capped 100 — one page
+    per request).
+  - `POST /api/ingest/legiscan` — ADMIN-only, keyed by `LEGISCAN_API_KEY`.
+    `id` (session id) takes precedence over `state`. `limit` is opt-in for admin
+    testing; omitted, it ingests the entire session because `getMasterList` is a
+    full session dump.
+  - All three adapters **fail closed** when their API key is missing rather than
+    issuing an unkeyed request.
+- **Error contract:** upstream failures return `502` with a generic body
+  (`Ingest failed. Check server logs for details.`). Real errors — which can
+  carry API keys or internal URLs — are logged server-side only.
+
 
 The UI only renders edit affordances when the server says the viewer is an
 `EDITOR` (`canEdit` in `(protected)/page.tsx`). That is a display concern, not a
@@ -139,7 +181,13 @@ two places where a regression would otherwise be silent:
   arguments, with `auth` and Prisma mocked. Asserts that `authorId` comes from
   the session and is never taken from the request.
 
-There is no database-backed integration test yet. CI runs `prisma migrate deploy`
+`src/lib/ingest/index.integration.test.ts` is the first DB-backed test: it runs
+`upsertInstruments` against a real Postgres (gated on `TEST_DATABASE_URL`, skips
+when unset) covering create-on-first-sight, in-place update, editor-field
+preservation, unknown-jurisdiction skip, chunked transactions, and the
+Congress.gov mapper→DB path end to end. Everything else — auth guards,
+cell-note writes, the triage `PATCH` — still relies on mocked Prisma. CI runs
+`prisma migrate deploy`
 against the workflow Postgres service before lint/typecheck/build/test, so the
 checked-in migration must apply.
 

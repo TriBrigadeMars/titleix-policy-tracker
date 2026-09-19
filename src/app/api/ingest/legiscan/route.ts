@@ -2,21 +2,9 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guards";
 import { upsertInstruments } from "@/lib/ingest";
 import { legiScanAdapter } from "@/lib/ingest/legiscan";
+import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
-const GENERIC_ERROR = "Ingest failed. Check server logs for details.";
 const MAX_INGEST_LIMIT = 5000;
-
-function paramInt(
-  value: string | null,
-  fallback: number,
-  min: number,
-  max: number
-): number {
-  if (value === null) return fallback;
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(n)));
-}
 
 /**
  * Trigger a LegiScan bill ingest. ADMIN-only.
@@ -54,6 +42,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[ingest/legiscan] failed", error);
-    return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });
+    return NextResponse.json(
+      { error: INGEST_GENERIC_ERROR },
+      { status: 502 }
+    );
   }
 }
