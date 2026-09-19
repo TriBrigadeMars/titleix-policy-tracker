@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mapOpenStatesBills } from "./openstates";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mapOpenStatesBills, openStatesAdapter } from "./openstates";
 
 const completeBill = {
   id: "ocd-bill/00000000-1111-2222-3333-444455556666",
@@ -109,5 +109,60 @@ describe("mapOpenStatesBills", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].identifier).toBe("NC-2023-SB 113");
+  });
+});
+
+describe("openStatesAdapter.fetch", () => {
+  const originalKey = process.env.OPEN_STATES_API_KEY;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalKey === undefined) {
+      delete process.env.OPEN_STATES_API_KEY;
+    } else {
+      process.env.OPEN_STATES_API_KEY = originalKey;
+    }
+  });
+
+  it("fails closed when OPEN_STATES_API_KEY is missing", async () => {
+    delete process.env.OPEN_STATES_API_KEY;
+
+    await expect(
+      openStatesAdapter.fetch({ jurisdiction: "nc" })
+    ).rejects.toThrow(/OPEN_STATES_API_KEY is not set/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit jurisdiction", async () => {
+    process.env.OPEN_STATES_API_KEY = "test-key";
+
+    await expect(openStatesAdapter.fetch({})).rejects.toThrow(
+      /requires an explicit jurisdiction/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requests with a timeout AbortSignal and the API key header", async () => {
+    process.env.OPEN_STATES_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(completeBill),
+    });
+
+    const rows = await openStatesAdapter.fetch({ jurisdiction: "nc" });
+
+    expect(rows).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("jurisdiction=nc");
+    expect((init.headers as Record<string, string>)["X-API-KEY"]).toBe(
+      "test-key"
+    );
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 });

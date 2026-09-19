@@ -4,6 +4,19 @@ import { upsertInstruments } from "@/lib/ingest";
 import { legiScanAdapter } from "@/lib/ingest/legiscan";
 
 const GENERIC_ERROR = "Ingest failed. Check server logs for details.";
+const MAX_INGEST_LIMIT = 5000;
+
+function paramInt(
+  value: string | null,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  if (value === null) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
 
 /**
  * Trigger a LegiScan bill ingest. ADMIN-only.
@@ -11,6 +24,9 @@ const GENERIC_ERROR = "Ingest failed. Check server logs for details.";
  * Query params:
  *   id    – LegiScan session id (takes precedence over `state`)
  *   state – two-letter state abbreviation (used when `id` is absent)
+ *   limit – optional cap on bills ingested, for admin testing (default: the
+ *           entire session; `getMasterList` is a full session dump, so omitting
+ *           `limit` never truncates coverage)
  */
 export async function POST(request: Request) {
   const guard = await requireRole("ADMIN");
@@ -19,13 +35,23 @@ export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
   const id = params.get("id");
   const state = params.get("state");
+  const limitParam = params.get("limit");
+  const limit =
+    limitParam === null
+      ? undefined
+      : paramInt(limitParam, 1, 1, MAX_INGEST_LIMIT);
 
   try {
-    const rows = await legiScanAdapter.fetch(
-      id ? { id } : state ? { state } : {}
-    );
+    const rows = await legiScanAdapter.fetch({
+      ...(id ? { id } : state ? { state } : {}),
+      ...(limit === undefined ? {} : { limit }),
+    });
     const result = await upsertInstruments(rows);
-    return NextResponse.json({ source: legiScanAdapter.name, ...result });
+    return NextResponse.json({
+      source: legiScanAdapter.name,
+      ...result,
+      ...(limit === undefined ? {} : { limit }),
+    });
   } catch (error) {
     console.error("[ingest/legiscan] failed", error);
     return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });

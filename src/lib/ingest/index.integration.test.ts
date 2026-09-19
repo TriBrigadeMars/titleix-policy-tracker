@@ -275,7 +275,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     expect(await findByKey(fedId, "REGULATION", shared)).toBeNull();
   });
 
-  it("rolls back the whole batch when the database rejects one row", async () => {
+  it("rolls back the failing chunk and rethrows when the database rejects one row", async () => {
     const good = rawRow({ jurisdictionCode: fedCode, identifier: id("atomic") });
     // Over Postgres's btree index entry limit for
     // instruments_jurisdiction_id_type_identifier_key, so this row is rejected
@@ -286,22 +286,21 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       jurisdictionCode: fedCode,
       identifier: `${RUN_ID}-${randomBytes(3000).toString("hex")}`,
     });
-    const before = await prisma.instrument.count({
-      where: { identifier: { startsWith: RUN_ID } },
-    });
 
     await expect(upsertInstruments([good, oversized])).rejects.toThrow();
 
-    // The batch is one transaction, so the row that would have succeeded is
-    // rolled back too and the run's row count is unchanged.
+    // Both rows land in the same chunk, so the chunk's transaction rolls back
+    // and neither row is committed. (Chunks commit independently: rows in an
+    // earlier chunk would stay committed, which is why ingest retries are safe
+    // but not all-or-nothing.)
     expect(
       await prisma.instrument.count({ where: { identifier: good.identifier } })
     ).toBe(0);
     expect(
       await prisma.instrument.count({
-        where: { identifier: { startsWith: RUN_ID } },
+        where: { identifier: oversized.identifier },
       })
-    ).toBe(before);
+    ).toBe(0);
   });
 
   it("stores Congress.gov mapper output end to end", async () => {

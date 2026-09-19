@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mapCongressBills } from "./congress";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { congressAdapter, mapCongressBills } from "./congress";
 
 const completeBill = {
   congress: 110,
@@ -149,5 +149,58 @@ describe("mapCongressBills", () => {
         `https://www.congress.gov/bill/119th-congress/${slug}/42`
       );
     }
+  });
+});
+
+describe("congressAdapter.fetch", () => {
+  const originalKey = process.env.CONGRESS_GOV_API_KEY;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalKey === undefined) {
+      delete process.env.CONGRESS_GOV_API_KEY;
+    } else {
+      process.env.CONGRESS_GOV_API_KEY = originalKey;
+    }
+  });
+
+  it("fails closed when CONGRESS_GOV_API_KEY is missing", async () => {
+    delete process.env.CONGRESS_GOV_API_KEY;
+
+    await expect(congressAdapter.fetch({})).rejects.toThrow(
+      /CONGRESS_GOV_API_KEY is not set/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requests with a timeout AbortSignal", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(completeBill),
+    });
+
+    const rows = await congressAdapter.fetch({ congress: 119, limit: 20 });
+
+    expect(rows).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("congress=119");
+    expect(url).toContain("limit=20");
+    expect(url).toContain("api_key=test-key");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("throws on a non-ok response", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+
+    await expect(congressAdapter.fetch({})).rejects.toThrow(/status 503/);
   });
 });

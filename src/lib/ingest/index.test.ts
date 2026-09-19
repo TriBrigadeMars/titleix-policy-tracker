@@ -14,7 +14,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { upsertInstruments, type RawInstrument } from "./index";
+import { upsertInstruments, INGEST_CHUNK_SIZE, chunk, type RawInstrument } from "./index";
 
 const usRow: RawInstrument = {
   jurisdictionCode: "US",
@@ -36,6 +36,20 @@ beforeEach(() => {
   $transaction.mockImplementation(async (ops: unknown[]) =>
     Promise.all(ops as Promise<unknown>[])
   );
+});
+
+describe("chunk", () => {
+  it("splits a list into fixed-size batches with a short remainder", () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it("returns a single batch when the list is smaller than the size", () => {
+    expect(chunk([1, 2], 50)).toEqual([[1, 2]]);
+  });
+
+  it("returns no batches for an empty list", () => {
+    expect(chunk([], 50)).toEqual([]);
+  });
 });
 
 describe("upsertInstruments", () => {
@@ -109,5 +123,38 @@ describe("upsertInstruments", () => {
     expect(call.create.introducedAt).toBeInstanceOf(Date);
     expect(call.create.passedAt).toBeNull();
     expect(call.create.effectiveAt).toBeNull();
+  });
+
+  it("commits one transaction per chunk when rows exceed INGEST_CHUNK_SIZE", async () => {
+    const rows = Array.from({ length: INGEST_CHUNK_SIZE * 2 + 1 }, (_, i) => ({
+      ...usRow,
+      identifier: `HR-${i}-119`,
+    }));
+
+    const result = await upsertInstruments(rows);
+
+    expect($transaction).toHaveBeenCalledTimes(3);
+    expect(
+      ($transaction.mock.calls[0][0] as unknown[]).length
+    ).toBe(INGEST_CHUNK_SIZE);
+    expect(
+      ($transaction.mock.calls[2][0] as unknown[]).length
+    ).toBe(1);
+    expect(result).toEqual({ total: 101, upserted: 101, skipped: 0 });
+  });
+
+  it("keeps earlier chunks committed and rethrows when a later chunk fails", async () => {
+    const rows = Array.from({ length: INGEST_CHUNK_SIZE * 2 }, (_, i) => ({
+      ...usRow,
+      identifier: `HR-${i}-119`,
+    }));
+    $transaction
+      .mockImplementationOnce(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[]))
+      .mockRejectedValueOnce(new Error("btree index row size exceeds maximum"));
+
+    await expect(upsertInstruments(rows)).rejects.toThrow(
+      /btree index row size exceeds maximum/
+    );
+    expect($transaction).toHaveBeenCalledTimes(2);
   });
 });

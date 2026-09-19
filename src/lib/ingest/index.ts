@@ -64,6 +64,56 @@ export function chunk<T>(items: T[], size = INGEST_CHUNK_SIZE): T[][] {
   return out;
 }
 
+function upsertOperation(
+  row: RawInstrument & { jurisdictionId: string },
+  now: Date
+) {
+  const introducedAt = parseSafeDate(row.introducedAt);
+  const passedAt = parseSafeDate(row.passedAt);
+  const effectiveAt = parseSafeDate(row.effectiveAt);
+
+  const updateData: Record<string, unknown> = {
+    title: row.title,
+    sourceUrl: row.sourceUrl,
+    rawSummary: row.rawSummary,
+    lastCheckedAt: now,
+  };
+
+  if (row.source !== undefined) updateData.source = row.source;
+  if (row.sourceId !== undefined) updateData.sourceId = row.sourceId;
+  if (introducedAt) updateData.introducedAt = introducedAt;
+  if (passedAt) updateData.passedAt = passedAt;
+  if (effectiveAt) updateData.effectiveAt = effectiveAt;
+
+  return prisma.instrument.upsert({
+    where: {
+      jurisdictionId_type_identifier: {
+        jurisdictionId: row.jurisdictionId,
+        type: row.type,
+        identifier: row.identifier,
+      },
+    },
+    create: {
+      jurisdictionId: row.jurisdictionId,
+      type: row.type,
+      identifier: row.identifier,
+      title: row.title,
+      status: row.status,
+      triageStatus: "UNREVIEWED",
+      source: row.source ?? null,
+      sourceId: row.sourceId ?? null,
+      isTitleIXRelevant: false,
+      introducedAt,
+      passedAt,
+      effectiveAt,
+      sourceUrl: row.sourceUrl,
+      rawSummary: row.rawSummary,
+      lastCheckedAt: now,
+    },
+    update: updateData,
+  });
+}
+
 /**
  * Upsert raw instruments, resolving jurisdiction codes to ids and keying on the
  * unique `(jurisdictionId, type, identifier)`.
@@ -73,6 +123,18 @@ export function chunk<T>(items: T[], size = INGEST_CHUNK_SIZE): T[][] {
  * so editor and lifecycle corrections are preserved. Editor-owned triage fields
  * (triageStatus, isTitleIXRelevant, relevanceConfidence) are never touched on
  * update. Rows whose jurisdiction code is not in the database are skipped.
+ *
+ * Writes are batched into {@link INGEST_CHUNK_SIZE}-row `$transaction`s, and
+ * each chunk commits on its own. A chunk that throws leaves earlier chunks
+ * committed and the error is rethrown (never swallowed) so callers still fail
+ * loudly. That is safe because the write is idempotent — it keys on
+ * `(jurisdictionId, type, identifier)` and the update path only rewrites
+ * machine-owned fields — so retrying the same ingest converges instead of
+ * duplicating rows.
+ *
+ * Rows are resolved and mapped one chunk at a time rather than as one array of
+ * every pending operation, so a full-session ingest (LegiScan returns tens of
+ * thousands of rows) does not hold several copies of the whole batch in memory.
  */
 export async function upsertInstruments(
   rows: RawInstrument[]
@@ -88,69 +150,25 @@ export async function upsertInstruments(
   });
   const codeToId = new Map(jurisdictions.map((j) => [j.code, j.id]));
 
-  // Attach the resolved jurisdiction id; drop rows whose code is unknown.
-  const resolved = rows.flatMap((row) => {
-    const jurisdictionId = codeToId.get(row.jurisdictionCode);
-    if (!jurisdictionId) return [];
-    return [{ ...row, jurisdictionId }];
-  });
-
   const now = new Date();
+  let upserted = 0;
 
-  const operations = resolved.map((row) => {
-      const introducedAt = parseSafeDate(row.introducedAt);
-      const passedAt = parseSafeDate(row.passedAt);
-      const effectiveAt = parseSafeDate(row.effectiveAt);
+  for (const batch of chunk(rows)) {
+    // Resolve jurisdiction ids per chunk; drop rows whose code is unknown.
+    const operations = batch.flatMap((row) => {
+      const jurisdictionId = codeToId.get(row.jurisdictionCode);
+      if (!jurisdictionId) return [];
+      upserted += 1;
+      return [upsertOperation({ ...row, jurisdictionId }, now)];
+    });
 
-      const updateData: Record<string, unknown> = {
-        title: row.title,
-        sourceUrl: row.sourceUrl,
-        rawSummary: row.rawSummary,
-        lastCheckedAt: now,
-      };
-
-      if (row.source !== undefined) updateData.source = row.source;
-      if (row.sourceId !== undefined) updateData.sourceId = row.sourceId;
-      if (introducedAt) updateData.introducedAt = introducedAt;
-      if (passedAt) updateData.passedAt = passedAt;
-      if (effectiveAt) updateData.effectiveAt = effectiveAt;
-
-      return prisma.instrument.upsert({
-        where: {
-          jurisdictionId_type_identifier: {
-            jurisdictionId: row.jurisdictionId,
-            type: row.type,
-            identifier: row.identifier,
-          },
-        },
-        create: {
-          jurisdictionId: row.jurisdictionId,
-          type: row.type,
-          identifier: row.identifier,
-          title: row.title,
-          status: row.status,
-          triageStatus: "UNREVIEWED",
-          source: row.source ?? null,
-          sourceId: row.sourceId ?? null,
-          isTitleIXRelevant: false,
-          introducedAt,
-          passedAt,
-          effectiveAt,
-          sourceUrl: row.sourceUrl,
-          rawSummary: row.rawSummary,
-          lastCheckedAt: now,
-        },
-        update: updateData,
-      });
-  });
-
-  for (const batch of chunk(operations)) {
-    await prisma.$transaction(batch);
+    if (operations.length === 0) continue;
+    await prisma.$transaction(operations);
   }
 
   return {
     total: rows.length,
-    upserted: resolved.length,
-    skipped: rows.length - resolved.length,
+    upserted,
+    skipped: rows.length - upserted,
   };
 }

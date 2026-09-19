@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { mapLegiScanMasterList } from "./legiscan";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  legiScanAdapter,
+  mapLegiScanMasterList,
+  mapLegiScanMasterListBatches,
+} from "./legiscan";
 
 const completeItem = {
   bill_id: 12345,
@@ -133,5 +137,104 @@ describe("mapLegiScanMasterList", () => {
       session: { session_id: 1541, session_name: "2023 Regular" },
     });
     expect(mapLegiScanMasterList(json)[0].identifier).toBe("CA-2023 Regular-AB1");
+  });
+});
+
+describe("mapLegiScanMasterListBatches", () => {
+  function manyItems(count: number) {
+    return masterlist(
+      ...Array.from({ length: count }, (_, i) => ({
+        ...completeItem,
+        number: `AB${i}`,
+        bill_id: 1000 + i,
+      }))
+    );
+  }
+
+  it("yields INGEST_CHUNK_SIZE batches and preserves the full session by default", () => {
+    const json = response(manyItems(120));
+    const batches = [...mapLegiScanMasterListBatches(json)];
+
+    expect(batches.map((b) => b.length)).toEqual([50, 50, 20]);
+    expect(batches.flat()).toHaveLength(120);
+    expect(mapLegiScanMasterList(json)).toHaveLength(120);
+  });
+
+  it("applies an explicit limit without a silent default cap", () => {
+    const json = response(manyItems(120));
+
+    expect(mapLegiScanMasterList(json, { limit: 5 })).toHaveLength(5);
+    expect(
+      [...mapLegiScanMasterListBatches(json, { limit: 60 })].flat()
+    ).toHaveLength(60);
+  });
+});
+
+describe("legiScanAdapter.fetch", () => {
+  const originalKey = process.env.LEGISCAN_API_KEY;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalKey === undefined) {
+      delete process.env.LEGISCAN_API_KEY;
+    } else {
+      process.env.LEGISCAN_API_KEY = originalKey;
+    }
+  });
+
+  it("fails closed when LEGISCAN_API_KEY is missing", async () => {
+    delete process.env.LEGISCAN_API_KEY;
+
+    await expect(legiScanAdapter.fetch({ state: "CA" })).rejects.toThrow(
+      /LEGISCAN_API_KEY is not set/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit session id or state", async () => {
+    process.env.LEGISCAN_API_KEY = "test-key";
+
+    await expect(legiScanAdapter.fetch({})).rejects.toThrow(
+      /requires a session id or state/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requests with a timeout AbortSignal and honours an explicit limit", async () => {
+    process.env.LEGISCAN_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(masterlist(completeItem)),
+    });
+
+    const rows = await legiScanAdapter.fetch({ state: "ca", limit: 1 });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].jurisdictionCode).toBe("CA");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("op=getMasterList");
+    expect(url).toContain("state=ca");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("throws the LegiScan error message when the API reports an error", async () => {
+    process.env.LEGISCAN_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "ERROR",
+        alert: { message: "Invalid API key" },
+      }),
+    });
+
+    await expect(legiScanAdapter.fetch({ id: 1541 })).rejects.toThrow(
+      "Invalid API key"
+    );
   });
 });
