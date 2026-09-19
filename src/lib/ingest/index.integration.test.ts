@@ -128,16 +128,15 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       effectiveAt: null,
       sourceUrl: "https://example.gov/instruments/create",
       rawSummary: "Introduced and referred to committee.",
-      isTitleIXRelevant: false,
-      relevanceConfidence: null,
-    });
+            relevanceConfidence: null,
+          });
     expect(stored?.introducedAt?.toISOString()).toBe(
       new Date("2025-01-15").toISOString()
     );
     expect(stored?.lastCheckedAt).toBeInstanceOf(Date);
   });
 
-  it("updates machine fields in place on re-ingest instead of inserting a duplicate", async () => {
+  it("updates source-owned fields in place on re-ingest instead of inserting a duplicate", async () => {
     const identifier = id("update");
     await upsertInstruments([
       rawRow({
@@ -174,7 +173,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     expect(rows[0].id).toBe(created?.id);
     expect(rows[0]).toMatchObject({
       title: "Amended title",
-      status: "PROPOSED",
+          status: "PASSED",
       sourceUrl: "https://example.gov/instruments/update/v2",
       rawSummary: "Amended summary.",
     });
@@ -182,6 +181,60 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       new Date("2025-06-01").toISOString()
     );
   });
+
+      it("persists an upstream lifecycle advance (PROPOSED => PASSED) on re-ingest", async () => {
+        const identifier = id("lifecycle-passed");
+        await upsertInstruments([
+          rawRow({
+            jurisdictionCode: fedCode,
+            identifier,
+            title: "Advances upstream",
+            status: "PROPOSED",
+          }),
+        ]);
+        expect((await findByKey(fedId, "BILL", identifier))?.status).toBe(
+          "PROPOSED"
+        );
+
+        await upsertInstruments([
+          rawRow({
+            jurisdictionCode: fedCode,
+            identifier,
+            title: "Advances upstream",
+            status: "PASSED",
+            passedAt: "2025-06-01",
+          }),
+        ]);
+
+        expect((await findByKey(fedId, "BILL", identifier))?.status).toBe("PASSED");
+      });
+
+      it("persists an upstream repeal (PASSED => REPEALED) on re-ingest", async () => {
+        const identifier = id("lifecycle-repealed");
+        await upsertInstruments([
+          rawRow({
+            jurisdictionCode: fedCode,
+            identifier,
+            title: "Repealed upstream",
+            status: "PASSED",
+            passedAt: "2025-06-01",
+          }),
+        ]);
+        expect((await findByKey(fedId, "BILL", identifier))?.status).toBe("PASSED");
+
+        await upsertInstruments([
+          rawRow({
+            jurisdictionCode: fedCode,
+            identifier,
+            title: "Repealed upstream",
+            status: "REPEALED",
+          }),
+        ]);
+
+        expect((await findByKey(fedId, "BILL", identifier))?.status).toBe(
+          "REPEALED"
+        );
+      });
 
   it("preserves editor-owned triage fields when re-ingesting", async () => {
     const identifier = id("triage");
@@ -194,11 +247,10 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     await prisma.instrument.update({
       where: { id: created!.id },
       data: {
-        triageStatus: "RELEVANT",
-        isTitleIXRelevant: true,
-        relevanceConfidence: 85,
-      },
-    });
+              triageStatus: "RELEVANT",
+              relevanceConfidence: 85,
+            },
+          });
 
     await upsertInstruments([
       rawRow({
@@ -211,14 +263,13 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     ]);
 
     const stored = await findByKey(fedId, "BILL", identifier);
-    expect(stored).toMatchObject({
-      title: "Re-ingested title",
-      status: "PROPOSED",
-      triageStatus: "RELEVANT",
-      isTitleIXRelevant: true,
-      relevanceConfidence: 85,
-    });
-  });
+        expect(stored).toMatchObject({
+          title: "Re-ingested title",
+          status: "EFFECTIVE",
+          triageStatus: "RELEVANT",
+          relevanceConfidence: 85,
+        });
+      });
 
   it("skips rows with an unknown jurisdiction code and ingests the rest", async () => {
     const knownIdentifier = id("known");
@@ -335,8 +386,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       status: "PROPOSED",
       sourceUrl: `https://www.congress.gov/bill/119th-congress/house-bill/${RUN_ID}`,
       rawSummary: "Referred to the Committee on Education and the Workforce.",
-      isTitleIXRelevant: false,
-    });
+          });
     expect(stored?.introducedAt?.toISOString()).toBe(
       new Date("2025-03-04").toISOString()
     );

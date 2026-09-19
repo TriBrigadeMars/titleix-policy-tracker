@@ -88,9 +88,9 @@ describe("cellNoteUpsertSchema", () => {
 });
 
 describe("instrumentTriageSchema", () => {
-  it("accepts valid triage payload with isTitleIXRelevant", () => {
+  it("accepts a valid triage payload", () => {
     const result = instrumentTriageSchema.safeParse({
-      isTitleIXRelevant: true,
+      triageStatus: "RELEVANT",
       relevanceConfidence: 95,
       issueTagIds: ["tag_1", "tag_2"],
     });
@@ -106,7 +106,7 @@ describe("instrumentTriageSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects when neither triageStatus nor isTitleIXRelevant is provided", () => {
+  it("rejects a payload without triageStatus", () => {
     const result = instrumentTriageSchema.safeParse({
       relevanceConfidence: 50,
       issueTagIds: [],
@@ -114,10 +114,27 @@ describe("instrumentTriageSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects the legacy isTitleIXRelevant representation", () => {
+    expect(
+      instrumentTriageSchema.safeParse({
+        isTitleIXRelevant: true,
+        issueTagIds: [],
+      }).success
+    ).toBe(false);
+
+    expect(
+      instrumentTriageSchema.safeParse({
+        triageStatus: "RELEVANT",
+        isTitleIXRelevant: true,
+        issueTagIds: [],
+      }).success
+    ).toBe(false);
+  });
+
   it("accepts null or omitted relevanceConfidence", () => {
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: false,
+        triageStatus: "NOT_RELEVANT",
         relevanceConfidence: null,
         issueTagIds: [],
       }).success
@@ -125,7 +142,7 @@ describe("instrumentTriageSchema", () => {
 
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: false,
+        triageStatus: "NOT_RELEVANT",
         issueTagIds: [],
       }).success
     ).toBe(true);
@@ -134,7 +151,7 @@ describe("instrumentTriageSchema", () => {
   it("rejects confidence out of 0-100 bounds", () => {
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: true,
+        triageStatus: "RELEVANT",
         relevanceConfidence: -1,
         issueTagIds: [],
       }).success
@@ -142,7 +159,7 @@ describe("instrumentTriageSchema", () => {
 
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: true,
+        triageStatus: "RELEVANT",
         relevanceConfidence: 101,
         issueTagIds: [],
       }).success
@@ -152,7 +169,7 @@ describe("instrumentTriageSchema", () => {
   it("rejects extra fields", () => {
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: true,
+        triageStatus: "RELEVANT",
         issueTagIds: [],
         maliciousField: "sneaky",
       }).success
@@ -163,7 +180,7 @@ describe("instrumentTriageSchema", () => {
     const thirtyTwo = Array.from({ length: 32 }, (_, i) => `tag_${i}`);
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: true,
+        triageStatus: "RELEVANT",
         issueTagIds: thirtyTwo,
       }).success
     ).toBe(true);
@@ -171,7 +188,7 @@ describe("instrumentTriageSchema", () => {
     const thirtyThree = Array.from({ length: 33 }, (_, i) => `tag_${i}`);
     expect(
       instrumentTriageSchema.safeParse({
-        isTitleIXRelevant: true,
+        triageStatus: "RELEVANT",
         issueTagIds: thirtyThree,
       }).success
     ).toBe(false);

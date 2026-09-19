@@ -79,7 +79,14 @@ export type TriageRelevanceFilter =
 
 export interface TriageQuery {
   jurisdictionCode?: string;
-  status?: "PROPOSED" | "PASSED" | "EFFECTIVE" | "ENJOINED" | "REPEALED";
+  status?:
+    | "PROPOSED"
+    | "PASSED"
+    | "EFFECTIVE"
+    | "ENJOINED"
+    | "FAILED"
+    | "VETOED"
+    | "REPEALED";
   relevance: TriageRelevanceFilter;
   limit: number;
 }
@@ -89,6 +96,8 @@ const VALID_STATUSES = new Set([
   "PASSED",
   "EFFECTIVE",
   "ENJOINED",
+  "FAILED",
+  "VETOED",
   "REPEALED",
 ]);
 

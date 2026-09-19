@@ -22,6 +22,8 @@ export type InstrumentStatus =
   | "PASSED"
   | "EFFECTIVE"
   | "ENJOINED"
+  | "FAILED"
+  | "VETOED"
   | "REPEALED";
 
 export type TriageStatus = "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT";
@@ -41,7 +43,6 @@ export interface Instrument {
   effectiveAt: string | null;
   sourceUrl: string | null;
   rawSummary: string | null;
-  isTitleIXRelevant: boolean;
   relevanceConfidence: number | null;
   jurisdiction: Jurisdiction;
   issueTags: { issueTag: IssueTag }[];

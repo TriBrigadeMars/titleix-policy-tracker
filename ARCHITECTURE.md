@@ -32,18 +32,21 @@
 Legal/policy items tracked per jurisdiction:
 
 - **Types:** `BILL`, `STATUTE`, `REGULATION` (enum — adding values requires a migration)
-- **Status:** `PROPOSED`, `PASSED`, `EFFECTIVE`, `ENJOINED`, `REPEALED`
-- **Fields:** identifier, title, status, dates, source URL, last checked, Title IX relevance flag + confidence
+- **Status:** `PROPOSED`, `PASSED`, `EFFECTIVE`, `ENJOINED`, `REPEALED`, `VETOED`, `FAILED`
+- **Fields:** identifier, title, status, dates, source URL, last checked, relevance confidence
 - **Unique keys:** `(jurisdictionId, type, identifier)` is the identity ingest upserts on.
   `(source, sourceId)` is a second, optional unique key for adapters that have a
   stable upstream id (Congress.gov, LegiScan, OpenStates all set it). It is
   nullable, so rows without a source id are unaffected.
 - **Triage encoding:** `TriageStatus` (`UNREVIEWED` | `RELEVANT` | `NOT_RELEVANT`)
   is the editor-owned relevance encoding, centralized in `src/lib/triage.ts`
-  (`triageStatus()` / `triageWhere()`). `isTitleIXRelevant` remains on the row
-  because the matrix query filters on it directly. The two are kept in sync by
-  the triage endpoint, and ingest must not overwrite triage fields or `status`
-  on update.
+  (`triageStatus()` / `triageWhere()`). It is the **single** representation of
+  Title IX relevance: the legacy `isTitleIXRelevant` boolean was dropped once
+  every reader (matrix, heatmap, triage dashboard, `PATCH`) was migrated.
+- **Ownership:** ingest owns source facts — `title`, `status`, dates, `sourceUrl`,
+  `rawSummary`, `lastCheckedAt` — and refreshes them on every re-ingest, including
+  `status`, so an upstream advance or repeal is persisted. `triageStatus`,
+  `relevanceConfidence`, and notes are editor-owned and never written by ingest.
 
 ### Notes
 
@@ -64,7 +67,7 @@ New users default to `READER`.
 
 ## Key Design Decisions
 
-- **Public read + signed-in editors:** Anonymous users cannot read; anyone with a Google account can sign in and read. Editors are promoted manually.
+- **Public read + signed-in editors:** Anyone — signed in or not — can read the comparison matrix and the 50-state heatmap. Write routes stay behind a session, and editor actions require the `EDITOR` role.
 - **Machine tracking, human analysis:** APIs fetch bill/status data. Only editors (humans) tag Title IX relevance and write comparison notes.
 - **Extensible schema, not extensible enum:** `InstrumentType` is a Prisma enum. Adding new types requires a migration. The schema is designed to support future types (guidance, executive orders, court orders) but they must be added explicitly.
 - **Matrix UX:** Rows = issue tags, columns = user-selected jurisdictions (2–8), cells = current rule + pending instruments + source citations.
@@ -81,9 +84,11 @@ The heatmap exists: `(public)/heatmap/page.tsx` renders
 `src/components/state-heatmap.tsx` from `getHeatmapSummaries()` in
 `src/lib/queries.ts`, which aggregates per-jurisdiction counts
 (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) plus a
-shared `totalIssueTags` with parallel Prisma queries and in-memory joins — no
-raw SQL, no schema migration. The tooltip renders "X of N" from
-`totalIssueTags` rather than a hardcoded 8.
+shared `totalIssueTags`. The relevant/pending/note counts are Prisma `groupBy`
+calls; the distinct-issue-tag count is one SQL `GROUP BY` over
+`instrument_issue_tags` joined to `instruments`, so the link table is never
+loaded row-by-row into memory. No schema migration is involved. The tooltip
+renders "X of N" from `totalIssueTags` rather than a hardcoded 8.
 
 Comparison reads are server-loaded. Selected jurisdictions live in the `j`
 search param as codes (`/?j=US,CA,TX`). `(public)/page.tsx` resolves those
@@ -118,17 +123,20 @@ Cell notes are the first mutation.
 
 ## Ingest Path
 
-Machine ingest is the second mutation surface. It does not touch editor-owned
-fields (`isTitleIXRelevant`, `relevanceConfidence`); it only writes
-machine-known fields and `lastCheckedAt`.
+Machine ingest is the second mutation surface. It owns source facts and does not
+touch editor-owned fields (`triageStatus`, `relevanceConfidence`).
 
 - **Adapter interface + upsert** (`src/lib/ingest/index.ts`):
   `IngestAdapter.fetch()` returns `RawInstrument[]` — a source-agnostic shape.
   No database access lives in the adapter. `upsertInstruments()` resolves
   jurisdiction codes to ids in one query, then upserts on
-  `(jurisdictionId, type, identifier)`. On update, sets machine fields +
-  `lastCheckedAt`; does not touch `isTitleIXRelevant`, `relevanceConfidence`,
-  `triageStatus`, or `status`.
+  `(jurisdictionId, type, identifier)`. On update it writes the source-owned
+  fields + `lastCheckedAt`, **including `status`**: lifecycle state is a source
+  fact, so an upstream advance or repeal is persisted rather than frozen at first
+  sight. It never touches `triageStatus`, `relevanceConfidence`, or notes.
+- **Null means "not reported":** a date the source omits or reports as `null`
+  leaves the stored value alone instead of clearing it. Only a reported value
+  overwrites.
 - **Chunked writes:** rows are written in `INGEST_CHUNK_SIZE` (50) row
   `$transaction`s, one transaction per chunk. A chunk that throws leaves earlier
   chunks committed and the error is rethrown, never swallowed. Retrying the same

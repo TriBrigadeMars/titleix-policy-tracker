@@ -161,6 +161,8 @@ export function TriageDashboard({
                   <SelectItem value="PASSED">PASSED</SelectItem>
                   <SelectItem value="EFFECTIVE">EFFECTIVE</SelectItem>
                   <SelectItem value="ENJOINED">ENJOINED</SelectItem>
+                  <SelectItem value="FAILED">FAILED</SelectItem>
+                  <SelectItem value="VETOED">VETOED</SelectItem>
                   <SelectItem value="REPEALED">REPEALED</SelectItem>
                 </SelectContent>
               </Select>
@@ -191,10 +193,7 @@ export function TriageDashboard({
           <div className="grid grid-cols-1 gap-4">
             {instruments.map((inst) => {
               const hasNotes = (inst.notes?.length ?? 0) > 0;
-              const status = triageStatus(
-                inst.triageStatus ?? inst.isTitleIXRelevant,
-                inst.relevanceConfidence
-              );
+              const status = triageStatus(inst.triageStatus);
 
               return (
                 <Card

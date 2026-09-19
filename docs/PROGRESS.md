@@ -27,9 +27,10 @@ Do not "simplify" this. Do not call `auth()` from edge middleware.
 
 - Jurisdictions: `US` + 50 states + `DC` (seeded as `STATE`).
 - Eight issue tags (matrix rows), seeded in `prisma/seed.ts`.
-- `Instrument` with types `BILL` | `STATUTE` | `REGULATION` and statuses `PROPOSED` | `PASSED` | `EFFECTIVE` | `ENJOINED` | `REPEALED`.
+- `Instrument` with types `BILL` | `STATUTE` | `REGULATION` and statuses `PROPOSED` | `PASSED` | `EFFECTIVE` | `ENJOINED` | `REPEALED` | `VETOED` | `FAILED`.
 - Unique `(jurisdictionId, type, identifier)` so ingest can upsert. A second optional unique `(source, sourceId)` keys rows by their stable upstream id.
-- Editor triage encoding is `TriageStatus` (`UNREVIEWED` | `RELEVANT` | `NOT_RELEVANT`), centralized in `src/lib/triage.ts`. `isTitleIXRelevant` stays on the row because the matrix filters on it directly; ingest must never overwrite triage fields or `status` on update.
+- Title IX relevance has exactly one representation: `TriageStatus` (`UNREVIEWED` | `RELEVANT` | `NOT_RELEVANT`), centralized in `src/lib/triage.ts`. The legacy `isTitleIXRelevant` boolean and its index were dropped in `prisma/migrations/20260918040000_drop_is_title_ix_relevant`; every reader (matrix, heatmap, triage dashboard, `PATCH`) now derives relevance from `triageStatus`.
+- Ownership on update: ingest owns `status` (it is a source fact and is refreshed on every re-ingest), while `triageStatus`, `relevanceConfidence`, and notes are editor-owned and never touched by ingest.
 - `InstrumentIssueTag` junction, `InstrumentNote`, `CellNote` (unique on jurisdiction x issue tag).
 - `InstrumentNote.authorId` and `CellNote.authorId` are optional and `onDelete: SetNull`, so deleting a user keeps their notes.
 - Cell note body: zod + `@db.VarChar(10000)`.
@@ -51,7 +52,7 @@ Cell notes are the only mutation.
 - `PUT /api/cell-notes` — upsert on `(jurisdictionId, issueTagId)`. `authorId` from session, never the body. Updates do not reassign author.
 - `DELETE /api/cell-notes?id=` — `deleteMany`, 404 if missing.
 - Strict zod in `src/lib/validation.ts` (`z.strictObject`).
-- List GETs for instruments and cell notes require `jurisdictionIds` (max 8) and share `src/lib/queries.ts`. Instruments default to `isTitleIXRelevant: true`.
+- List GETs for instruments and cell notes require `jurisdictionIds` (max 8) and share `src/lib/queries.ts`. Instruments default to `triageStatus: "RELEVANT"`.
 
 ### Tests
 
@@ -91,6 +92,29 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 6. The heatmap tooltip no longer hardcodes "of 8"; `totalIssueTags` is aggregated and threaded through.
 7. Dead read endpoints/functions (`getInstrumentById`, `getUserById`, `GET /api/instruments/[id]`, `GET /api/admin/users/[id]`) were removed with their tests.
 8. `ALL_ROLES` is an `as const` tuple driving `z.enum(ALL_ROLES)`, and list parsing shares `parseBoundedLimit()`.
+
+### Third review (ingest correctness invariants)
+
+A review of the ingest path found that re-ingest silently froze lifecycle status and
+that Title IX relevance had two competing representations. Fixed:
+
+1. `upsertInstruments` now writes `status` on update, so an upstream advance or
+   repeal is persisted instead of being ignored after first sight. `status` is a
+   source fact; `triageStatus`, `relevanceConfidence`, and notes remain editor-owned.
+2. `isTitleIXRelevant` is gone from the schema, the API surface, and every query.
+   `triageStatus` is the single source of truth for relevance; the legacy field in a
+   `PATCH` body is rejected with 400.
+3. `PATCH /api/instruments/[id]` no longer resolves contradictory inputs through
+   compatibility precedence; `triageStatus` is required by the strict schema.
+4. LegiScan `masterlist` rows are validated at the boundary with a zod schema
+   (positive integer `bill_id`, non-empty `number`), replacing the unsound
+   `isMasterListItem` type predicate that let malformed rows through.
+5. `REPEALED` is no longer used as a catch-all for LegiScan vetoes and failures;
+   the vocabulary gained `VETOED` and `FAILED`.
+6. `introducedAt` is only set from an actual introduction status date. A status
+   date from a later stage no longer invents an introduction date.
+7. Re-ingest now respects "source did not report this": a `null` incoming date
+   leaves the stored value alone instead of clearing it.
 
 ## What is not done
 
@@ -134,9 +158,10 @@ Triage, cell-note writes, ingest, and admin stay behind `src/lib/auth-guards.ts`
   and `upsertInstruments()` which resolves jurisdiction codes to ids per chunk,
   then upserts on `(jurisdictionId, type, identifier)`.
 - Machine fields (title, status, dates, sourceUrl, rawSummary, lastCheckedAt)
-  are overwritten on update. Editor fields (isTitleIXRelevant,
-  relevanceConfidence, triageStatus) and `status` are never touched by ingest —
-  that is human triage and lifecycle correction.
+  are overwritten on update, including `status`: lifecycle state is a source
+  fact, so an upstream advance (PROPOSED -> PASSED) or repeal is persisted on the
+  next ingest. Editor fields (relevanceConfidence, triageStatus) and notes are
+  never touched by ingest — that is human triage.
 - Writes are chunked: `INGEST_CHUNK_SIZE` (50) rows per `$transaction`. Each
   chunk commits on its own, so a later chunk failure leaves earlier chunks
   committed and the error is rethrown. Retry is idempotent because the write
@@ -194,7 +219,7 @@ Triage, cell-note writes, ingest, and admin stay behind `src/lib/auth-guards.ts`
 
 - `src/app/(protected)/triage/page.tsx` — RSC page for reviewing unreviewed, relevant, and not relevant instruments with bounded filters (`jurisdiction`, `status`, `relevance`, `limit`). Gate checks `EDITOR` role and redirects non-editors.
 - `src/components/triage-dashboard.tsx` & `src/components/instrument-triage-editor.tsx` — client UI for filtering instruments and opening dialog to mark relevance, set confidence, attach issue tags, and create/delete instrument notes.
-- `PATCH /api/instruments/[id]` — EDITOR-only endpoint for setting `isTitleIXRelevant`, `relevanceConfidence`, and atomically synchronizing issue tags (`InstrumentIssueTag` junction).
+- `PATCH /api/instruments/[id]` — EDITOR-only endpoint for setting `triageStatus` and `relevanceConfidence`, and atomically synchronizing issue tags (`InstrumentIssueTag` junction). The legacy `isTitleIXRelevant` boolean is rejected with 400 by the strict schema.
 - `POST /api/instrument-notes` & `DELETE /api/instrument-notes?id=` — EDITOR-only endpoints for managing `InstrumentNote` records. `authorId` is strictly session-derived (`guard.user.id`).
 - Strict zod schemas in `src/lib/validation.ts`: `instrumentTriageSchema`, `instrumentNoteCreateSchema`.
 - Query layer: `instrumentTriageWhere`, `getInstrumentsForTriage` in `src/lib/queries.ts`. The tri-state relevance encoding (unreviewed/relevant/not-relevant) lives in `src/lib/triage.ts` (`triageStatus`, `triageWhere`) so the query layer and the dashboard badge UI stay in sync.
@@ -221,10 +246,10 @@ Triage, cell-note writes, ingest, and admin stay behind `src/lib/auth-guards.ts`
 
 ## Suggested next slice
 
-1. Public heatmap/matrix view for anonymous users â€” **done**: both pages render
+1. Public heatmap/matrix view for anonymous users — **done**: both pages render
    signed out with a read-only note; editor chrome requires a session.
 2. Extend DB-backed integration tests to the write paths (cell notes, triage
-   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place. â€” **done**:
+   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place. — **done**:
    both write paths have `*.integration.test.ts` coverage, including re-ingest
    preserving editor triage.
 

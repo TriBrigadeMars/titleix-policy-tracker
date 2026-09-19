@@ -95,7 +95,6 @@ export function toInstrument(row: InstrumentRow): Instrument {
     effectiveAt: iso(row.effectiveAt),
     sourceUrl: row.sourceUrl,
     rawSummary: row.rawSummary,
-    isTitleIXRelevant: row.isTitleIXRelevant,
     relevanceConfidence: row.relevanceConfidence,
     jurisdiction: toJurisdiction(row.jurisdiction),
     issueTags: row.issueTags.map((link) => ({
@@ -261,36 +260,42 @@ export async function getInstrumentsForTriage(input: {
 
 
 export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
-  const [jurisdictions, relevantGroups, pendingGroups, tagCounts, noteGroups, issueTagCount] =
-    await Promise.all([
-      prisma.jurisdiction.findMany({
-        orderBy: [{ level: "asc" }, { code: "asc" }],
-      }),
-      prisma.instrument.groupBy({
-        by: ["jurisdictionId"],
-        where: { isTitleIXRelevant: true },
-        _count: { id: true },
-      }),
-      prisma.instrument.groupBy({
-        by: ["jurisdictionId"],
-        where: { isTitleIXRelevant: true, status: "PROPOSED" },
-        _count: { id: true },
-      }),
-      // Distinct issue tags per jurisdiction, aggregated in SQL. Loading every
-      // link row into memory does not scale with the instrument table.
-      prisma.$queryRaw<{ jurisdiction_id: string; tag_count: bigint }[]>`
+  const [
+    jurisdictions,
+    relevantGroups,
+    pendingGroups,
+    tagCounts,
+    noteGroups,
+    issueTagCount,
+  ] = await Promise.all([
+    prisma.jurisdiction.findMany({
+      orderBy: [{ level: "asc" }, { code: "asc" }],
+    }),
+    prisma.instrument.groupBy({
+      by: ["jurisdictionId"],
+      where: { triageStatus: "RELEVANT" },
+      _count: { id: true },
+    }),
+    prisma.instrument.groupBy({
+      by: ["jurisdictionId"],
+      where: { triageStatus: "RELEVANT", status: "PROPOSED" },
+      _count: { id: true },
+    }),
+    // Distinct issue tags per jurisdiction, aggregated in SQL. Loading every
+    // link row into memory does not scale with the instrument table.
+    prisma.$queryRaw<{ jurisdiction_id: string; tag_count: bigint }[]>`
         SELECT i.jurisdiction_id, COUNT(DISTINCT iit.issue_tag_id) AS tag_count
         FROM instrument_issue_tags iit
         JOIN instruments i ON i.id = iit.instrument_id
-        WHERE i.is_title_ix_relevant = true
+        WHERE i.triage_status = 'RELEVANT'
         GROUP BY i.jurisdiction_id
       `,
-      prisma.cellNote.groupBy({
-        by: ["jurisdictionId"],
-        _count: { id: true },
-      }),
-      prisma.issueTag.count(),
-    ]);
+    prisma.cellNote.groupBy({
+      by: ["jurisdictionId"],
+      _count: { id: true },
+    }),
+    prisma.issueTag.count(),
+  ]);
 
   const tagCountMap = new Map(
     tagCounts.map((row) => [row.jurisdiction_id, Number(row.tag_count)])
@@ -313,9 +318,9 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
     pendingCount: pendingMap.get(j.id) ?? 0,
     issueTagCount: tagCountMap.get(j.id) ?? 0,
     cellNoteCount: noteMap.get(j.id) ?? 0,
-      totalIssueTags: issueTagCount,
-    }));
-  }
+    totalIssueTags: issueTagCount,
+  }));
+}
 
 export const userSummarySelect = {
   id: true,

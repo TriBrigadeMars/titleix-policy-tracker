@@ -138,7 +138,6 @@ describe.skipIf(!hasTestDatabase)("PATCH /api/instruments/[id] (Postgres)", () =
         title: "Original ingest title",
         status: "PROPOSED",
         triageStatus: "UNREVIEWED",
-        isTitleIXRelevant: false,
       },
     });
     instrumentId = instrument.id;
@@ -157,7 +156,7 @@ describe.skipIf(!hasTestDatabase)("PATCH /api/instruments/[id] (Postgres)", () =
     await prisma.$disconnect();
   });
 
-  it("triage to RELEVANT writes status, derived relevance, tags and confidence", async () => {
+  it("triage to RELEVANT writes status, tags and confidence", async () => {
     signIn(EDITOR);
 
     const response = await PATCH(
@@ -173,7 +172,6 @@ describe.skipIf(!hasTestDatabase)("PATCH /api/instruments/[id] (Postgres)", () =
     const stored = await readInstrument();
     expect(stored).toMatchObject({
       triageStatus: "RELEVANT",
-      isTitleIXRelevant: true,
       relevanceConfidence: 85,
     });
     expect(await tagSlugs()).toEqual([firstIssueTagId, secondIssueTagId].sort());
@@ -184,32 +182,28 @@ describe.skipIf(!hasTestDatabase)("PATCH /api/instruments/[id] (Postgres)", () =
     expect(payload).toMatchObject({
       id: instrumentId,
       triageStatus: "RELEVANT",
-      isTitleIXRelevant: true,
       relevanceConfidence: 85,
     });
     expect(
-      payload.issueTags.map(
-        (link: { issueTag: { id: string } }) => link.issueTag.id
-      ).sort()
+      payload.issueTags
+        .map((link: { issueTag: { id: string } }) => link.issueTag.id)
+        .sort()
     ).toEqual([firstIssueTagId, secondIssueTagId].sort());
   });
 
-  it("legacy isTitleIXRelevant: false encodes as NOT_RELEVANT", async () => {
+  it("rejects the legacy isTitleIXRelevant representation with 400", async () => {
     signIn(EDITOR);
 
     const response = await PATCH(
       patch(instrumentId, { isTitleIXRelevant: false, issueTagIds: [] }),
       context(instrumentId)
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
 
+    // The rejected request must not have mutated the row.
     const stored = await readInstrument();
-    expect(stored).toMatchObject({
-      triageStatus: "NOT_RELEVANT",
-      isTitleIXRelevant: false,
-      relevanceConfidence: null,
-    });
-    expect(stored?.issueTags).toHaveLength(0);
+    expect(stored?.triageStatus).toBe("RELEVANT");
+    expect(stored?.issueTags).toHaveLength(2);
   });
 
   it("returns 404 for an unknown instrument id", async () => {
@@ -255,7 +249,7 @@ describe.skipIf(!hasTestDatabase)("PATCH /api/instruments/[id] (Postgres)", () =
     ).toBe(0);
   });
 
-  it("keeps editor triage and lifecycle status when ingest re-runs", async () => {
+  it("keeps editor triage while refreshing source-owned lifecycle status on re-ingest", async () => {
     signIn(EDITOR);
 
     const triaged = await PATCH(
@@ -291,10 +285,10 @@ describe.skipIf(!hasTestDatabase)("PATCH /api/instruments/[id] (Postgres)", () =
       // machine-owned fields follow the source
       title: "Re-ingested title",
       rawSummary: "Re-ingested summary.",
-      // editor/lifecycle-owned fields survive the re-ingest
-      status: "PROPOSED",
+      // the source owns lifecycle status, so it is refreshed
+      status: "EFFECTIVE",
+      // editor-owned fields survive the re-ingest
       triageStatus: "RELEVANT",
-      isTitleIXRelevant: true,
       relevanceConfidence: 70,
     });
     expect(stored?.effectiveAt?.toISOString()).toBe(

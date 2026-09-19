@@ -58,12 +58,12 @@ describe("mapLegiScanMasterList", () => {
     ]);
   });
 
-  it("maps numeric status 4 to PASSED with the status date as passedAt and sets introducedAt from available date", () => {
+  it("maps numeric status 4 to PASSED with the status date as passedAt and no fabricated introducedAt", () => {
     const item = { ...completeItem, status: 4, status_date: "2023-08-01" };
     const row = mapLegiScanMasterList(response(masterlist(item)))[0];
     expect(row.status).toBe("PASSED");
     expect(row.passedAt).toBe("2023-08-01");
-    expect(row.introducedAt).toBe("2023-08-01");
+      expect(row.introducedAt).toBeNull();
   });
 
   it("maps chaptered status 8 to EFFECTIVE", () => {
@@ -73,25 +73,25 @@ describe("mapLegiScanMasterList", () => {
     );
   });
 
-  it("maps vetoed status 5 to REPEALED", () => {
+    it("maps vetoed status 5 to VETOED", () => {
     const item = { ...completeItem, status: 5 };
     expect(mapLegiScanMasterList(response(masterlist(item)))[0].status).toBe(
-      "REPEALED"
+        "VETOED"
     );
   });
 
-  it("maps failed status 6 to REPEALED", () => {
+    it("maps failed status 6 to FAILED", () => {
     const item = { ...completeItem, status: 6 };
     expect(mapLegiScanMasterList(response(masterlist(item)))[0].status).toBe(
-      "REPEALED"
+        "FAILED"
     );
   });
 
-  it("defaults an unrecognized status to PROPOSED and populates available date", () => {
+    it("defaults an unrecognized status to PROPOSED without inventing an introduction date", () => {
     const item = { ...completeItem, status: "0", status_date: "2023-01-11" };
     const row = mapLegiScanMasterList(response(masterlist(item)))[0];
     expect(row.status).toBe("PROPOSED");
-    expect(row.introducedAt).toBe("2023-01-11");
+      expect(row.introducedAt).toBeNull();
     expect(row.passedAt).toBeNull();
   });
 
@@ -130,6 +130,56 @@ describe("mapLegiScanMasterList", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].identifier).toBe("CA-AB1");
   });
+
+    it("skips items with no bill_id instead of producing an 'undefined' sourceId", () => {
+      const rows = mapLegiScanMasterList(
+        response(masterlist(completeItem, { number: "AB2", status: "1" }))
+      );
+      expect(rows.map((r) => r.sourceId)).toEqual(["12345"]);
+    });
+
+    it("skips items whose bill_id is not a positive integer", () => {
+      const rows = mapLegiScanMasterList(
+        response(
+          masterlist(
+            completeItem,
+            { number: "AB2", bill_id: "not-a-number", status: "1", state: "CA" },
+            { number: "AB3", bill_id: 0, status: "1", state: "CA" },
+            { number: "AB4", bill_id: -7, status: "1", state: "CA" },
+            { number: "AB5", bill_id: 1.5, status: "1", state: "CA" }
+          )
+        )
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].sourceId).toBe("12345");
+    });
+
+    it("skips items with an empty or missing bill number", () => {
+      const rows = mapLegiScanMasterList(
+        response(
+          masterlist(
+            completeItem,
+            { bill_id: 999, number: "", status: "1", state: "CA" },
+            { bill_id: 998, status: "1", state: "CA" }
+          )
+        )
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    it("keeps processing the batch after a malformed row", () => {
+      const rows = mapLegiScanMasterList(
+        response(
+          masterlist(
+            { number: "AB2", status: "1", state: "CA" },
+            completeItem,
+            { number: "AB3", bill_id: "nope", status: "1", state: "CA" }
+          )
+        )
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].identifier).toBe("CA-AB1");
+    });
 
   it("uses the session name when no session tag exists", () => {
     const json = response({

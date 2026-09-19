@@ -8,15 +8,21 @@ A legislative/regulatory impact tracker for researchers, advocates, and journali
 
 ## Quick Start
 
-```bash
-# Install dependencies
-npm install
+Requires **Node 22** (see `.nvmrc`) and **PostgreSQL 16** (the version used in CI).
+Ingest API keys (`CONGRESS_GOV_API_KEY`, `OPEN_STATES_API_KEY`, `LEGISCAN_API_KEY`)
+are optional and only needed to run the admin ingest triggers.
+
+```powershell
+# Clone and enter the repository (all commands below assume this directory)
+git clone https://github.com/TriBrigadeMars/titleix-policy-tracker.git
+Set-Location .\titleix-policy-tracker
+
+# Install dependencies from the lockfile
+npm ci
 
 # Set up environment
-cp .env.example .env
+Copy-Item .env.example .env
 # Edit .env with your database URL and Google OAuth credentials.
-# Ingest API keys (CONGRESS_GOV_API_KEY, OPEN_STATES_API_KEY, LEGISCAN_API_KEY)
-# are optional and only needed to run the admin ingest triggers.
 
 # Generate Prisma client and run migrations
 npm run db:generate
@@ -27,6 +33,13 @@ npm run db:seed
 
 # Start dev server
 npm run dev
+```
+
+If a later command reports that it cannot find `package.json`, you are not in the
+repository root. Verify with:
+
+```powershell
+Test-Path .\package.json
 ```
 
 ## Scripts
@@ -51,16 +64,16 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for domain model, design decisions, and
 
 Completed:
 
-- Signed-in comparison matrix with cell notes (read + write)
+- Signed-in comparison matrix with cell notes (read + write), anonymously readable at `/`
 - Editor triage and instrument notes
-- 50-state heatmap
+- 50-state heatmap, anonymously readable at `/heatmap`
 - Admin user-role management
-- Ingest pipeline: Congress.gov federal bills plus LegiScan and OpenStates state bills, behind admin-only trigger routes that upsert on `(jurisdictionId, type, identifier)`
+- Ingest pipeline: Congress.gov federal bills plus LegiScan and OpenStates state bills, behind admin-only trigger routes that upsert on `(jurisdictionId, type, identifier)` and refresh source-owned lifecycle status on every run
 
 Remaining:
 
-- Public (anonymous) heatmap/matrix view
-- Broader Postgres-backed integration tests for the write paths (cell notes, triage `PATCH`)
+- Typed, source-specific ingest contracts and batch/iterable persistence
+- Broader Postgres-backed integration tests for the auth guards (mocked today)
 
 ## Status and contributing
 

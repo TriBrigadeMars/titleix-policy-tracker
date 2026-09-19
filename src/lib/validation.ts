@@ -29,28 +29,19 @@ export const cellNoteUpsertSchema = z.strictObject({
 
 export type CellNoteUpsertInput = z.infer<typeof cellNoteUpsertSchema>;
 
-export const instrumentTriageSchema = z
-  .strictObject({
-    triageStatus: z.enum(["UNREVIEWED", "RELEVANT", "NOT_RELEVANT"]).optional(),
-    isTitleIXRelevant: z.boolean().optional(),
-    relevanceConfidence: z
-      .number()
-      .int()
-      .min(0, "Confidence must be between 0 and 100")
-      .max(100, "Confidence must be between 0 and 100")
-      .nullable()
-      .optional(),
-    issueTagIds: z
-      .array(idSchema)
-      .max(32, "At most 32 issue tags may be attached"),
-  })
-  .refine(
-    (data) =>
-      data.triageStatus !== undefined || data.isTitleIXRelevant !== undefined,
-    {
-      message: "Must provide triageStatus or isTitleIXRelevant",
-    }
-  );
+export const instrumentTriageSchema = z.strictObject({
+  triageStatus: z.enum(["UNREVIEWED", "RELEVANT", "NOT_RELEVANT"]),
+  relevanceConfidence: z
+    .number()
+    .int()
+    .min(0, "Confidence must be between 0 and 100")
+    .max(100, "Confidence must be between 0 and 100")
+    .nullable()
+    .optional(),
+  issueTagIds: z
+    .array(idSchema)
+    .max(32, "At most 32 issue tags may be attached"),
+});
 
 export type InstrumentTriageInput = z.infer<typeof instrumentTriageSchema>;
 

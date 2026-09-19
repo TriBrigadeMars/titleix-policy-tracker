@@ -52,7 +52,6 @@ const mockInstrument = {
   effectiveAt: null,
   sourceUrl: null,
   rawSummary: null,
-  isTitleIXRelevant: true,
   relevanceConfidence: 90,
   jurisdiction: {
     id: "jur-1",
@@ -102,7 +101,7 @@ beforeEach(() => {
 
 describe("PATCH /api/instruments/[id]", () => {
   const validBody = {
-    isTitleIXRelevant: true,
+    triageStatus: "RELEVANT",
     relevanceConfidence: 90,
     issueTagIds: ["tag-1"],
   };
@@ -145,6 +144,29 @@ describe("PATCH /api/instruments/[id]", () => {
     signIn(EDITOR);
     const res = await PATCH(
       patch("inst-1", { ...validBody, rogueField: "attempt" }),
+      { params: Promise.resolve({ id: "inst-1" }) }
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects the legacy isTitleIXRelevant representation with 400", async () => {
+    signIn(EDITOR);
+    const res = await PATCH(
+      patch("inst-1", {
+        isTitleIXRelevant: true,
+        relevanceConfidence: 90,
+        issueTagIds: [],
+      }),
+      { params: Promise.resolve({ id: "inst-1" }) }
+    );
+    expect(res.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a body without triageStatus with 400", async () => {
+    signIn(EDITOR);
+    const res = await PATCH(
+      patch("inst-1", { relevanceConfidence: 90, issueTagIds: [] }),
       { params: Promise.resolve({ id: "inst-1" }) }
     );
     expect(res.status).toBe(400);
@@ -203,7 +225,6 @@ describe("PATCH /api/instruments/[id]", () => {
       expect.objectContaining({
         data: {
           triageStatus: "NOT_RELEVANT",
-          isTitleIXRelevant: false,
           relevanceConfidence: null,
         },
       })

@@ -33,6 +33,22 @@ describe("instrumentComparisonWhere", () => {
   });
 });
 
+describe("relevance invariant", () => {
+  it("derives relevance from triageStatus alone in every reader", () => {
+    // There is no second boolean column that could disagree: comparison reads
+    // and the triage dashboard both key off triageStatus.
+    expect(
+      instrumentComparisonWhere({ jurisdictionIds: ["j1"], issueTagIds: [] })
+    ).toEqual({
+      jurisdictionId: { in: ["j1"] },
+      triageStatus: "RELEVANT",
+    });
+    expect(
+      instrumentTriageWhere({ relevance: "relevant" })
+    ).toMatchObject({ triageStatus: "RELEVANT" });
+  });
+});
+
 describe("cellNoteComparisonWhere", () => {
   it("requires jurisdiction ids", () => {
     expect(
