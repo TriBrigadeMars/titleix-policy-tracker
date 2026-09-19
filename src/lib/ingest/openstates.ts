@@ -1,4 +1,8 @@
-import type { IngestAdapter, RawInstrument } from "@/lib/ingest";
+import {
+  FETCH_TIMEOUT_MS,
+  type IngestAdapter,
+  type RawInstrument,
+} from "@/lib/ingest";
 import { stateCodeFromOpenStatesJurisdiction } from "@/lib/ingest/state";
 
 interface OpenStatesBill {
@@ -87,7 +91,12 @@ export function mapOpenStatesBills(json: unknown): RawInstrument[] {
 export const openStatesAdapter: IngestAdapter = {
   name: "openstates",
   async fetch(opts) {
-    const jurisdiction = opts?.jurisdiction ?? "nc";
+    // No silent default: a missing jurisdiction used to quietly ingest North
+    // Carolina, which is indistinguishable from a real NC ingest.
+    const jurisdiction = opts?.jurisdiction;
+    if (jurisdiction === undefined || jurisdiction === "") {
+      throw new Error("OpenStates ingest requires an explicit jurisdiction");
+    }
     const perPage = opts?.perPage ?? opts?.limit ?? 50;
 
     const params = new URLSearchParams({
@@ -100,9 +109,15 @@ export const openStatesAdapter: IngestAdapter = {
 
     const url = `${OPEN_STATES_BILLS_URL}?${params.toString()}`;
     const apiKey = process.env.OPEN_STATES_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "OPEN_STATES_API_KEY is not set; see .env.example for instructions"
+      );
+    }
 
     const res = await fetch(url, {
-      headers: apiKey ? { "X-API-KEY": apiKey } : undefined,
+      headers: { "X-API-KEY": apiKey },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`OpenStates request failed with status ${res.status}`);

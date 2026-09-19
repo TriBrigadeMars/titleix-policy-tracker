@@ -3,6 +3,8 @@ import { requireRole } from "@/lib/auth-guards";
 import { upsertInstruments } from "@/lib/ingest";
 import { legiScanAdapter } from "@/lib/ingest/legiscan";
 
+const GENERIC_ERROR = "Ingest failed. Check server logs for details.";
+
 /**
  * Trigger a LegiScan bill ingest. ADMIN-only.
  *
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
     const result = await upsertInstruments(rows);
     return NextResponse.json({ source: legiScanAdapter.name, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ingest failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error("[ingest/legiscan] failed", error);
+    return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });
   }
 }

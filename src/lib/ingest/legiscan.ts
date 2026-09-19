@@ -1,4 +1,8 @@
-import type { IngestAdapter, RawInstrument } from "@/lib/ingest";
+import {
+  FETCH_TIMEOUT_MS,
+  type IngestAdapter,
+  type RawInstrument,
+} from "@/lib/ingest";
 import {
   legiscanIsIntroduced,
   legiscanIsPassed,
@@ -139,7 +143,9 @@ export const legiScanAdapter: IngestAdapter = {
     }
 
     const url = `${LEGISCAN_API_URL}?${params.toString()}`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) {
       throw new Error(`LegiScan request failed with status ${res.status}`);
     }

@@ -6,6 +6,7 @@ import { congressAdapter } from "@/lib/ingest/congress";
 const MAX_INGEST_LIMIT = 100;
 const DEFAULT_CONGRESS = 119;
 const DEFAULT_LIMIT = 50;
+const GENERIC_ERROR = "Ingest failed. Check server logs for details.";
 
 function paramInt(
   value: string | null,
@@ -43,9 +44,15 @@ export async function POST(request: Request) {
   try {
     const rows = await congressAdapter.fetch({ congress, limit });
     const result = await upsertInstruments(rows);
-    return NextResponse.json({ source: congressAdapter.name, ...result });
+    return NextResponse.json({
+      source: congressAdapter.name,
+      ...result,
+      limit,
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ingest failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Upstream errors can carry API keys or internal URLs; log server-side and
+    // return a generic message.
+    console.error("[ingest/congress] failed", error);
+    return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });
   }
 }

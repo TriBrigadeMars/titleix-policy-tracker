@@ -261,7 +261,7 @@ export async function getInstrumentsForTriage(input: {
 
 
 export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
-  const [jurisdictions, relevantGroups, pendingGroups, tagLinks, noteGroups, issueTagCount] =
+  const [jurisdictions, relevantGroups, pendingGroups, tagCounts, noteGroups, issueTagCount] =
     await Promise.all([
       prisma.jurisdiction.findMany({
         orderBy: [{ level: "asc" }, { code: "asc" }],
@@ -276,14 +276,15 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
         where: { isTitleIXRelevant: true, status: "PROPOSED" },
         _count: { id: true },
       }),
-      // Fetch issue-tag links for relevant instruments to count distinct tags per jurisdiction
-      prisma.instrumentIssueTag.findMany({
-        where: { instrument: { isTitleIXRelevant: true } },
-        select: {
-          issueTagId: true,
-          instrument: { select: { jurisdictionId: true } },
-        },
-      }),
+      // Distinct issue tags per jurisdiction, aggregated in SQL. Loading every
+      // link row into memory does not scale with the instrument table.
+      prisma.$queryRaw<{ jurisdiction_id: string; tag_count: bigint }[]>`
+        SELECT i.jurisdiction_id, COUNT(DISTINCT iit.issue_tag_id) AS tag_count
+        FROM instrument_issue_tags iit
+        JOIN instruments i ON i.id = iit.instrument_id
+        WHERE i.is_title_ix_relevant = true
+        GROUP BY i.jurisdiction_id
+      `,
       prisma.cellNote.groupBy({
         by: ["jurisdictionId"],
         _count: { id: true },
@@ -291,17 +292,9 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
       prisma.issueTag.count(),
     ]);
 
-  // Count distinct issue tags per jurisdiction
-  const issueTagSets = new Map<string, Set<string>>();
-  for (const link of tagLinks) {
-    const jId = link.instrument.jurisdictionId;
-    let s = issueTagSets.get(jId);
-    if (!s) {
-      s = new Set();
-      issueTagSets.set(jId, s);
-    }
-    s.add(link.issueTagId);
-  }
+  const tagCountMap = new Map(
+    tagCounts.map((row) => [row.jurisdiction_id, Number(row.tag_count)])
+  );
 
   const relevantMap = new Map(
     relevantGroups.map((g) => [g.jurisdictionId, g._count.id])
@@ -318,7 +311,7 @@ export async function getHeatmapSummaries(): Promise<HeatmapSummary[]> {
     jurisdiction: toJurisdiction(j),
     relevantCount: relevantMap.get(j.id) ?? 0,
     pendingCount: pendingMap.get(j.id) ?? 0,
-    issueTagCount: issueTagSets.get(j.id)?.size ?? 0,
+    issueTagCount: tagCountMap.get(j.id) ?? 0,
     cellNoteCount: noteMap.get(j.id) ?? 0,
       totalIssueTags: issueTagCount,
     }));

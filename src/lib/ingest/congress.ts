@@ -1,4 +1,4 @@
-import type { IngestAdapter, RawInstrument } from "@/lib/ingest";
+import { FETCH_TIMEOUT_MS, type IngestAdapter, type RawInstrument } from "@/lib/ingest";
 
 interface CongressBill {
   congress: number;
@@ -84,9 +84,18 @@ export const congressAdapter: IngestAdapter = {
     const limit = opts?.limit ?? 50;
     let url = `${CONGRESS_GOV_BILLS_URL}?congress=${congress}&limit=${limit}`;
     const apiKey = process.env.CONGRESS_GOV_API_KEY;
-    if (apiKey) url += `&api_key=${encodeURIComponent(apiKey)}`;
+    if (!apiKey) {
+      // Fail closed: without a key the request would be anonymous and may be
+      // silently rate-limited or rejected, producing misleading empty ingests.
+      throw new Error(
+        "CONGRESS_GOV_API_KEY is not set; see .env.example for instructions"
+      );
+    }
+    url += `&api_key=${encodeURIComponent(apiKey)}`;
 
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) {
       throw new Error(
         `Congress.gov request failed with status ${res.status}`

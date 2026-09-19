@@ -39,10 +39,29 @@ export interface IngestResult {
   skipped: number;
 }
 
+/** Upstream fetch calls are capped so a hung API cannot stall an ingest. */
+export const FETCH_TIMEOUT_MS = 10_000;
+
 export function parseSafeDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Rows per `$transaction`. A single unbounded transaction over a whole master
+ * list (LegiScan returns tens of thousands of rows) can exceed statement and
+ * lock timeouts, so upserts are batched.
+ */
+export const INGEST_CHUNK_SIZE = 50;
+
+export function chunk<T>(items: T[], size = INGEST_CHUNK_SIZE): T[][] {
+  if (size <= 0) throw new Error("chunk size must be positive");
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
 }
 
 /**
@@ -78,8 +97,7 @@ export async function upsertInstruments(
 
   const now = new Date();
 
-  await prisma.$transaction(
-    resolved.map((row) => {
+  const operations = resolved.map((row) => {
       const introducedAt = parseSafeDate(row.introducedAt);
       const passedAt = parseSafeDate(row.passedAt);
       const effectiveAt = parseSafeDate(row.effectiveAt);
@@ -124,8 +142,11 @@ export async function upsertInstruments(
         },
         update: updateData,
       });
-    })
-  );
+  });
+
+  for (const batch of chunk(operations)) {
+    await prisma.$transaction(batch);
+  }
 
   return {
     total: rows.length,

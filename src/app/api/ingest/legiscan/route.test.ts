@@ -113,6 +113,8 @@ describe("POST /api/ingest/legiscan — ADMIN", () => {
     fetch.mockRejectedValue(new Error("missing key"));
     const response = await POST(post(base));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "missing key" });
+    expect(await response.json()).toEqual({
+      error: "Ingest failed. Check server logs for details.",
+    });
   });
 });
