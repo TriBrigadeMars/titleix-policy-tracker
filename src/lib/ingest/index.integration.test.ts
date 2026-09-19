@@ -174,7 +174,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     expect(rows[0].id).toBe(created?.id);
     expect(rows[0]).toMatchObject({
       title: "Amended title",
-      status: "PASSED",
+      status: "PROPOSED",
       sourceUrl: "https://example.gov/instruments/update/v2",
       rawSummary: "Amended summary.",
     });
@@ -193,7 +193,11 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
 
     await prisma.instrument.update({
       where: { id: created!.id },
-      data: { isTitleIXRelevant: true, relevanceConfidence: 85 },
+      data: {
+        triageStatus: "RELEVANT",
+        isTitleIXRelevant: true,
+        relevanceConfidence: 85,
+      },
     });
 
     await upsertInstruments([
@@ -209,7 +213,8 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     const stored = await findByKey(fedId, "BILL", identifier);
     expect(stored).toMatchObject({
       title: "Re-ingested title",
-      status: "EFFECTIVE",
+      status: "PROPOSED",
+      triageStatus: "RELEVANT",
       isTitleIXRelevant: true,
       relevanceConfidence: 85,
     });

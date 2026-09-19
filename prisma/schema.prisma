@@ -121,6 +121,7 @@ model Instrument {
   identifier        String           // bill number, CFR cite, chapter, etc.
   title             String
   status            InstrumentStatus
+  triageStatus      TriageStatus     @default(UNREVIEWED) @map("triage_status")
   introducedAt      DateTime?        @map("introduced_at")
   passedAt          DateTime?        @map("passed_at")
   effectiveAt       DateTime?        @map("effective_at")
@@ -138,10 +139,19 @@ model Instrument {
 
   @@unique([jurisdictionId, type, identifier])
   @@index([jurisdictionId, status])
+  @@index([triageStatus, status])
   @@index([isTitleIXRelevant, status])
   @@index([type])
   @@index([lastCheckedAt])
   @@map("instruments")
+}
+
+enum TriageStatus {
+  UNREVIEWED
+  RELEVANT
+  NOT_RELEVANT
+
+  @@map("triage_status")
 }
 
 // Instrument types. Adding a value requires a Prisma migration.

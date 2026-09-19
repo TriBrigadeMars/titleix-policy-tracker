@@ -72,13 +72,13 @@ describe("upsertInstruments", () => {
     });
   });
 
-  it("overwrites machine fields on update but never editor fields", async () => {
+  it("overwrites machine fields on update but never editor fields or status", async () => {
     await upsertInstruments([usRow]);
     const call = upsert.mock.calls[0][0];
     expect(call.update).not.toHaveProperty("isTitleIXRelevant");
     expect(call.update).not.toHaveProperty("relevanceConfidence");
+    expect(call.update).not.toHaveProperty("status");
     expect(call.update).toHaveProperty("title", "A bill");
-    expect(call.update).toHaveProperty("status", "PROPOSED");
     expect(call.update).toHaveProperty("lastCheckedAt");
   });
 
@@ -86,6 +86,7 @@ describe("upsertInstruments", () => {
     await upsertInstruments([usRow]);
     const call = upsert.mock.calls[0][0];
     expect(call.create.isTitleIXRelevant).toBe(false);
+    expect(call.create.triageStatus).toBe("UNREVIEWED");
     expect(call.create).not.toHaveProperty("relevanceConfidence");
   });
 

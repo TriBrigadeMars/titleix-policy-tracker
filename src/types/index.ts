@@ -24,6 +24,8 @@ export type InstrumentStatus =
   | "ENJOINED"
   | "REPEALED";
 
+export type TriageStatus = "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT";
+
 export interface Instrument {
   id: string;
   jurisdictionId: string;
@@ -31,6 +33,7 @@ export interface Instrument {
   identifier: string;
   title: string;
   status: InstrumentStatus;
+  triageStatus: TriageStatus;
   introducedAt: string | null;
   passedAt: string | null;
   effectiveAt: string | null;

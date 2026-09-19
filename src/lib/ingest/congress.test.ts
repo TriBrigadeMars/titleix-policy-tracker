@@ -33,7 +33,8 @@ describe("mapCongressBills", () => {
         introducedAt: "2007-01-04",
         passedAt: null,
         effectiveAt: null,
-        sourceUrl: "https://www.congress.gov/bill/110th-congress/HCONRES/10",
+        sourceUrl:
+          "https://www.congress.gov/bill/110th-congress/house-concurrent-resolution/10",
         rawSummary: "Sponsor introductory remarks on measure. (CR H4200)",
       },
     ]);
@@ -120,8 +121,29 @@ describe("mapCongressBills", () => {
       introducedAt: null,
       passedAt: null,
       effectiveAt: null,
-      sourceUrl: "https://www.congress.gov/bill/119th-congress/HR/1234",
+      sourceUrl: "https://www.congress.gov/bill/119th-congress/house-bill/1234",
       rawSummary: null,
     });
+  });
+
+  it("maps all Congress bill types to their proper congress.gov URL slugs", () => {
+    const typesToSlugs: Record<string, string> = {
+      HR: "house-bill",
+      S: "senate-bill",
+      HJRES: "house-joint-resolution",
+      SJRES: "senate-joint-resolution",
+      HCONRES: "house-concurrent-resolution",
+      SCONRES: "senate-concurrent-resolution",
+      HRES: "house-resolution",
+      SRES: "senate-resolution",
+    };
+
+    for (const [type, slug] of Object.entries(typesToSlugs)) {
+      const bill = { ...completeBill, type, congress: 119, number: "42" };
+      const [mapped] = mapCongressBills(response(bill));
+      expect(mapped.sourceUrl).toBe(
+        `https://www.congress.gov/bill/119th-congress/${slug}/42`
+      );
+    }
   });
 });

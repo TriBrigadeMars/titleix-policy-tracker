@@ -87,6 +87,7 @@ export function toInstrument(row: InstrumentRow): Instrument {
     identifier: row.identifier,
     title: row.title,
     status: row.status,
+    triageStatus: row.triageStatus,
     introducedAt: iso(row.introducedAt),
     passedAt: iso(row.passedAt),
     effectiveAt: iso(row.effectiveAt),
@@ -146,7 +147,7 @@ export function instrumentComparisonWhere(input: {
 }): Prisma.InstrumentWhereInput {
   const where: Prisma.InstrumentWhereInput = {
     jurisdictionId: { in: input.jurisdictionIds },
-    isTitleIXRelevant: true,
+    triageStatus: "RELEVANT",
   };
 
   if (input.issueTagIds.length > 0) {

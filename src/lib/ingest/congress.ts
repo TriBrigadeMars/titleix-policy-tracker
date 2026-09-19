@@ -11,6 +11,21 @@ interface CongressBill {
 
 const CONGRESS_GOV_BILLS_URL = "https://api.congress.gov/v3/bill";
 
+const CONGRESS_BILL_TYPE_SLUGS: Record<string, string> = {
+  HR: "house-bill",
+  S: "senate-bill",
+  HJRES: "house-joint-resolution",
+  SJRES: "senate-joint-resolution",
+  HCONRES: "house-concurrent-resolution",
+  SCONRES: "senate-concurrent-resolution",
+  HRES: "house-resolution",
+  SRES: "senate-resolution",
+};
+
+export function getCongressBillSlug(type: string): string {
+  return CONGRESS_BILL_TYPE_SLUGS[type.toUpperCase()] ?? type.toLowerCase();
+}
+
 function isCongressBill(value: unknown): value is CongressBill {
   if (typeof value !== "object" || value === null) return false;
   const bill = value as Record<string, unknown>;
@@ -36,6 +51,7 @@ export function mapCongressBills(json: unknown): RawInstrument[] {
   const rows: RawInstrument[] = [];
   for (const bill of bills) {
     if (!isCongressBill(bill)) continue;
+    const slug = getCongressBillSlug(bill.type);
     rows.push({
       jurisdictionCode: "US",
       type: "BILL",
@@ -48,7 +64,7 @@ export function mapCongressBills(json: unknown): RawInstrument[] {
         typeof bill.introducedDate === "string" ? bill.introducedDate : null,
       passedAt: null,
       effectiveAt: null,
-      sourceUrl: `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type}/${bill.number}`,
+      sourceUrl: `https://www.congress.gov/bill/${bill.congress}th-congress/${slug}/${bill.number}`,
       rawSummary:
         typeof bill.latestAction?.text === "string"
           ? bill.latestAction.text

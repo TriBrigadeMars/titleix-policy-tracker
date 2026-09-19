@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { describeFetchError } from "@/lib/fetch-error";
 import { formatDate } from "@/lib/format-date";
 import { INSTRUMENT_NOTE_MAX_LENGTH } from "@/lib/validation";
-import type { Instrument, InstrumentNote, IssueTag } from "@/types";
+import type { Instrument, InstrumentNote, IssueTag, TriageStatus } from "@/types";
 
 interface InstrumentTriageEditorProps {
   instrument: Instrument;
@@ -33,7 +33,11 @@ export function InstrumentTriageEditor({
   onClose,
   onSaved,
 }: InstrumentTriageEditorProps) {
-  const [isRelevant, setIsRelevant] = useState(instrument.isTitleIXRelevant);
+  const [currentTriageStatus, setCurrentTriageStatus] = useState<TriageStatus>(
+    () =>
+      instrument.triageStatus ??
+      (instrument.isTitleIXRelevant ? "RELEVANT" : "UNREVIEWED")
+  );
   const [confidence, setConfidence] = useState<number | "">(
     instrument.relevanceConfidence ?? ""
   );
@@ -59,14 +63,15 @@ export function InstrumentTriageEditor({
   const deriveUpdatedInstrument = useCallback(
     (nextNotes: InstrumentNote[]): Instrument => ({
       ...instrument,
-      isTitleIXRelevant: isRelevant,
+      triageStatus: currentTriageStatus,
+      isTitleIXRelevant: currentTriageStatus === "RELEVANT",
       relevanceConfidence: confidence === "" ? null : Number(confidence),
       issueTags: issueTags
         .filter((tag) => selectedTags.has(tag.id))
         .map((tag) => ({ issueTag: tag })),
       notes: nextNotes,
     }),
-    [instrument, isRelevant, confidence, issueTags, selectedTags]
+    [instrument, currentTriageStatus, confidence, issueTags, selectedTags]
   );
 
   function toggleTag(tagId: string) {
@@ -90,7 +95,8 @@ export function InstrumentTriageEditor({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          isTitleIXRelevant: isRelevant,
+          triageStatus: currentTriageStatus,
+          isTitleIXRelevant: currentTriageStatus === "RELEVANT",
           relevanceConfidence,
           issueTagIds: Array.from(selectedTags),
         }),
@@ -211,25 +217,44 @@ export function InstrumentTriageEditor({
           {/* Title IX Relevance & Confidence */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border rounded-md p-4 bg-card">
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Title IX Relevance</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Title IX Relevance</Label>
+                {currentTriageStatus === "UNREVIEWED" && (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/50 text-amber-600 dark:text-amber-400 text-[10px] px-1.5 py-0"
+                  >
+                    Unreviewed
+                  </Badge>
+                )}
+              </div>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   size="sm"
-                  variant={isRelevant ? "default" : "outline"}
-                  onClick={() => setIsRelevant(true)}
-                  className={isRelevant ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                  variant={currentTriageStatus === "RELEVANT" ? "default" : "outline"}
+                  onClick={() => setCurrentTriageStatus("RELEVANT")}
+                  className={currentTriageStatus === "RELEVANT" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
                 >
                   Relevant
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  variant={!isRelevant ? "default" : "outline"}
-                  onClick={() => setIsRelevant(false)}
-                  className={!isRelevant ? "bg-zinc-700 hover:bg-zinc-800" : ""}
+                  variant={currentTriageStatus === "NOT_RELEVANT" ? "default" : "outline"}
+                  onClick={() => setCurrentTriageStatus("NOT_RELEVANT")}
+                  className={currentTriageStatus === "NOT_RELEVANT" ? "bg-zinc-700 hover:bg-zinc-800 text-white" : ""}
                 >
                   Not Relevant
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={currentTriageStatus === "UNREVIEWED" ? "secondary" : "ghost"}
+                  onClick={() => setCurrentTriageStatus("UNREVIEWED")}
+                  className="text-xs"
+                >
+                  Reset
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -313,7 +338,7 @@ export function InstrumentTriageEditor({
 
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
-              Cancel
+              Close
             </Button>
             <Button
               type="button"

@@ -88,13 +88,30 @@ describe("cellNoteUpsertSchema", () => {
 });
 
 describe("instrumentTriageSchema", () => {
-  it("accepts valid triage payload", () => {
+  it("accepts valid triage payload with isTitleIXRelevant", () => {
     const result = instrumentTriageSchema.safeParse({
       isTitleIXRelevant: true,
       relevanceConfidence: 95,
       issueTagIds: ["tag_1", "tag_2"],
     });
     expect(result.success).toBe(true);
+  });
+
+  it("accepts valid triage payload with triageStatus", () => {
+    const result = instrumentTriageSchema.safeParse({
+      triageStatus: "NOT_RELEVANT",
+      relevanceConfidence: null,
+      issueTagIds: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects when neither triageStatus nor isTitleIXRelevant is provided", () => {
+    const result = instrumentTriageSchema.safeParse({
+      relevanceConfidence: 50,
+      issueTagIds: [],
+    });
+    expect(result.success).toBe(false);
   });
 
   it("accepts null or omitted relevanceConfidence", () => {

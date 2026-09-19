@@ -1,48 +1,51 @@
+import type { Prisma, TriageStatus as PrismaTriageStatus } from "@prisma/client";
+
 /**
- * Title IX relevance is a three-way determination persisted as two columns on
- * `Instrument`:
+ * Title IX relevance determination represented as a single authoritative
+ * status on `Instrument`:
  *
- *   - `isTitleIXRelevant: boolean`
- *   - `relevanceConfidence: number | null`
+ *   - UNREVIEWED
+ *   - RELEVANT
+ *   - NOT_RELEVANT
  *
- * The three states are:
- *   - UNREVIEWED    -> (false, null)
- *   - RELEVANT      -> (true,  anything)
- *   - NOT_RELEVANT  -> (false, not null)
- *
- * This module is the single source of truth for deriving that status so the
- * encoding is never re-implemented per call site.
+ * `relevanceConfidence` is optional metadata, not the status discriminator.
  */
-export type TriageStatus = "unreviewed" | "relevant" | "not_relevant";
+export type TriageStatus = "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT";
 
 export function triageStatus(
-  isTitleIXRelevant: boolean,
-  relevanceConfidence: number | null
+  statusOrRelevant: PrismaTriageStatus | string | boolean,
+  confidence?: number | null
 ): TriageStatus {
-  if (!isTitleIXRelevant && relevanceConfidence === null) return "unreviewed";
-  if (isTitleIXRelevant) return "relevant";
-  return "not_relevant";
+  if (typeof statusOrRelevant === "string") {
+    const upper = statusOrRelevant.toUpperCase();
+    if (upper === "RELEVANT") return "RELEVANT";
+    if (upper === "NOT_RELEVANT") return "NOT_RELEVANT";
+    if (upper === "UNREVIEWED") return "UNREVIEWED";
+  }
+  if (typeof statusOrRelevant === "boolean") {
+    if (statusOrRelevant) return "RELEVANT";
+    if (confidence !== null && confidence !== undefined) return "NOT_RELEVANT";
+    return "UNREVIEWED";
+  }
+  return "UNREVIEWED";
 }
 
 /**
- * Inverse of {@link triageStatus}: the Prisma `where` predicate that selects a
- * status. Relevant rows ignore confidence entirely; "not_relevant" requires a
- * confidence (an editor made a call), while "unreviewed" is the default
- * `(false, null)` pair. Keeping these beside the derivation stops the encoding
- * from drifting between the query layer and the UI.
+ * The Prisma `where` predicate that selects a triage status.
+ * Uses `triageStatus` as the single source of truth.
  */
 export function triageWhere(
-  status: TriageStatus
-): {
-  isTitleIXRelevant: boolean;
-  relevanceConfidence?: { not: null } | null;
-} {
-  switch (status) {
-    case "relevant":
-      return { isTitleIXRelevant: true };
-    case "not_relevant":
-      return { isTitleIXRelevant: false, relevanceConfidence: { not: null } };
-    case "unreviewed":
-      return { isTitleIXRelevant: false, relevanceConfidence: null };
+  status: string
+): Prisma.InstrumentWhereInput {
+  const normalized = status.toUpperCase();
+  switch (normalized) {
+    case "RELEVANT":
+      return { triageStatus: "RELEVANT" };
+    case "NOT_RELEVANT":
+      return { triageStatus: "NOT_RELEVANT" };
+    case "UNREVIEWED":
+      return { triageStatus: "UNREVIEWED" };
+    default:
+      return {};
   }
 }

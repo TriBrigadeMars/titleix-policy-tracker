@@ -46,6 +46,7 @@ const mockInstrument = {
   identifier: "HB 100",
   title: "A bill",
   status: "PROPOSED",
+  triageStatus: "RELEVANT",
   introducedAt: null,
   passedAt: null,
   effectiveAt: null,
@@ -182,6 +183,31 @@ describe("PATCH /api/instruments/[id]", () => {
     const data = await res.json();
     expect(data.id).toBe("inst-1");
     expect(deleteMany).toHaveBeenCalledWith({ where: { instrumentId: "inst-1" } });
+    expect(createMany).toHaveBeenCalledWith({
+      data: [{ instrumentId: "inst-1", issueTagId: "tag-1" }],
+    });
+  });
+
+  it("updates with triageStatus: NOT_RELEVANT and deduplicates issue tag IDs", async () => {
+    signIn(EDITOR);
+    const res = await PATCH(
+      patch("inst-1", {
+        triageStatus: "NOT_RELEVANT",
+        relevanceConfidence: null,
+        issueTagIds: ["tag-1", "tag-1"],
+      }),
+      { params: Promise.resolve({ id: "inst-1" }) }
+    );
+    expect(res.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          triageStatus: "NOT_RELEVANT",
+          isTitleIXRelevant: false,
+          relevanceConfidence: null,
+        },
+      })
+    );
     expect(createMany).toHaveBeenCalledWith({
       data: [{ instrumentId: "inst-1", issueTagId: "tag-1" }],
     });

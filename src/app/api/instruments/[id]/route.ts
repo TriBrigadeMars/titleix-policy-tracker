@@ -36,7 +36,19 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const { isTitleIXRelevant, relevanceConfidence, issueTagIds } = parsed.data;
+  const {
+    triageStatus: inputStatus,
+    isTitleIXRelevant,
+    relevanceConfidence,
+    issueTagIds,
+  } = parsed.data;
+
+  const resolvedTriageStatus: "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT" =
+    inputStatus ?? (isTitleIXRelevant ? "RELEVANT" : "NOT_RELEVANT");
+  const resolvedIsRelevant = resolvedTriageStatus === "RELEVANT";
+
+  // Deduplicate issue tag IDs before syncing
+  const uniqueIssueTagIds = [...new Set(issueTagIds)];
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
@@ -54,20 +66,21 @@ export async function PATCH(request: Request, context: RouteContext) {
         where: { instrumentId: id },
       });
 
-      if (issueTagIds.length > 0) {
+      if (uniqueIssueTagIds.length > 0) {
         await tx.instrumentIssueTag.createMany({
-          data: issueTagIds.map((issueTagId) => ({
+          data: uniqueIssueTagIds.map((issueTagId) => ({
             instrumentId: id,
             issueTagId,
           })),
         });
       }
 
-      // Update relevance and confidence
+      // Update triage status, relevance and confidence
       return tx.instrument.update({
         where: { id },
         data: {
-          isTitleIXRelevant,
+          triageStatus: resolvedTriageStatus,
+          isTitleIXRelevant: resolvedIsRelevant,
           relevanceConfidence: relevanceConfidence ?? null,
         },
         include: instrumentWithNotesInclude,

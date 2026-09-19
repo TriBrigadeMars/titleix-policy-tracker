@@ -37,15 +37,21 @@ export interface IngestResult {
   skipped: number;
 }
 
+export function parseSafeDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 /**
  * Upsert raw instruments, resolving jurisdiction codes to ids and keying on the
  * unique `(jurisdictionId, type, identifier)`.
  *
- * Machine-owned fields (title, status, dates, sourceUrl, rawSummary,
- * lastCheckedAt) are overwritten on update. Editor-owned fields
- * (isTitleIXRelevant, relevanceConfidence) are never touched — that is human
- * triage, not ingest. Rows whose jurisdiction code is not in the database are
- * skipped and counted.
+ * Machine-owned fields (title, dates when valid, sourceUrl, rawSummary,
+ * lastCheckedAt) are updated on re-ingest. Status is NOT overwritten on update
+ * so editor and lifecycle corrections are preserved. Editor-owned triage fields
+ * (triageStatus, isTitleIXRelevant, relevanceConfidence) are never touched on
+ * update. Rows whose jurisdiction code is not in the database are skipped.
  */
 export async function upsertInstruments(
   rows: RawInstrument[]
@@ -71,8 +77,23 @@ export async function upsertInstruments(
   const now = new Date();
 
   await prisma.$transaction(
-    resolved.map((row) =>
-      prisma.instrument.upsert({
+    resolved.map((row) => {
+      const introducedAt = parseSafeDate(row.introducedAt);
+      const passedAt = parseSafeDate(row.passedAt);
+      const effectiveAt = parseSafeDate(row.effectiveAt);
+
+      const updateData: Record<string, unknown> = {
+        title: row.title,
+        sourceUrl: row.sourceUrl,
+        rawSummary: row.rawSummary,
+        lastCheckedAt: now,
+      };
+
+      if (introducedAt) updateData.introducedAt = introducedAt;
+      if (passedAt) updateData.passedAt = passedAt;
+      if (effectiveAt) updateData.effectiveAt = effectiveAt;
+
+      return prisma.instrument.upsert({
         where: {
           jurisdictionId_type_identifier: {
             jurisdictionId: row.jurisdictionId,
@@ -86,26 +107,18 @@ export async function upsertInstruments(
           identifier: row.identifier,
           title: row.title,
           status: row.status,
-          introducedAt: row.introducedAt ? new Date(row.introducedAt) : null,
-          passedAt: row.passedAt ? new Date(row.passedAt) : null,
-          effectiveAt: row.effectiveAt ? new Date(row.effectiveAt) : null,
-          sourceUrl: row.sourceUrl,
-          rawSummary: row.rawSummary,
-          lastCheckedAt: now,
+          triageStatus: "UNREVIEWED",
           isTitleIXRelevant: false,
-        },
-        update: {
-          title: row.title,
-          status: row.status,
-          introducedAt: row.introducedAt ? new Date(row.introducedAt) : null,
-          passedAt: row.passedAt ? new Date(row.passedAt) : null,
-          effectiveAt: row.effectiveAt ? new Date(row.effectiveAt) : null,
+          introducedAt,
+          passedAt,
+          effectiveAt,
           sourceUrl: row.sourceUrl,
           rawSummary: row.rawSummary,
           lastCheckedAt: now,
         },
-      })
-    )
+        update: updateData,
+      });
+    })
   );
 
   return {
