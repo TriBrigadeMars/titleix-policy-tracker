@@ -41,6 +41,8 @@ describe("mapLegiScanMasterList", () => {
         jurisdictionCode: "CA",
         type: "BILL",
         identifier: "CA-20232024-AB1",
+        source: "legiscan",
+        sourceId: "12345",
         title: "An act relating to student safety",
         status: "PROPOSED",
         introducedAt: "2023-01-11",
@@ -52,12 +54,12 @@ describe("mapLegiScanMasterList", () => {
     ]);
   });
 
-  it("maps numeric status 4 to PASSED with the status date as passedAt", () => {
+  it("maps numeric status 4 to PASSED with the status date as passedAt and sets introducedAt from available date", () => {
     const item = { ...completeItem, status: 4, status_date: "2023-08-01" };
     const row = mapLegiScanMasterList(response(masterlist(item)))[0];
     expect(row.status).toBe("PASSED");
     expect(row.passedAt).toBe("2023-08-01");
-    expect(row.introducedAt).toBeNull();
+    expect(row.introducedAt).toBe("2023-08-01");
   });
 
   it("maps chaptered status 8 to EFFECTIVE", () => {
@@ -67,11 +69,25 @@ describe("mapLegiScanMasterList", () => {
     );
   });
 
-  it("defaults an unrecognized status to PROPOSED without dates", () => {
+  it("maps vetoed status 5 to REPEALED", () => {
+    const item = { ...completeItem, status: 5 };
+    expect(mapLegiScanMasterList(response(masterlist(item)))[0].status).toBe(
+      "REPEALED"
+    );
+  });
+
+  it("maps failed status 6 to REPEALED", () => {
+    const item = { ...completeItem, status: 6 };
+    expect(mapLegiScanMasterList(response(masterlist(item)))[0].status).toBe(
+      "REPEALED"
+    );
+  });
+
+  it("defaults an unrecognized status to PROPOSED and populates available date", () => {
     const item = { ...completeItem, status: "0", status_date: "2023-01-11" };
     const row = mapLegiScanMasterList(response(masterlist(item)))[0];
     expect(row.status).toBe("PROPOSED");
-    expect(row.introducedAt).toBeNull();
+    expect(row.introducedAt).toBe("2023-01-11");
     expect(row.passedAt).toBeNull();
   });
 

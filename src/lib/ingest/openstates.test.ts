@@ -28,6 +28,8 @@ describe("mapOpenStatesBills", () => {
         jurisdictionCode: "NC",
         type: "BILL",
         identifier: "NC-2023-SB 113",
+        source: "openstates",
+        sourceId: "ocd-bill/00000000-1111-2222-3333-444455556666",
         title: "An act to protect students",
         status: "PASSED",
         introducedAt: "2023-02-01",

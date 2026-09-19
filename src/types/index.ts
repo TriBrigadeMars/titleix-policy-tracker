@@ -34,6 +34,8 @@ export interface Instrument {
   title: string;
   status: InstrumentStatus;
   triageStatus: TriageStatus;
+  source?: string | null;
+  sourceId?: string | null;
   introducedAt: string | null;
   passedAt: string | null;
   effectiveAt: string | null;
@@ -49,23 +51,24 @@ export interface Instrument {
 export interface InstrumentNote {
   id: string;
   instrumentId: string;
-  authorId: string;
+  authorId: string | null;
   body: string;
   createdAt: string;
   updatedAt: string;
-  author: { id: string; name: string | null };
+  author: { id: string; name: string | null } | null;
 }
 
 export interface CellNote {
   id: string;
   jurisdictionId: string;
   issueTagId: string;
+  authorId?: string | null;
   body: string;
   createdAt: string;
   updatedAt: string;
   jurisdiction: Jurisdiction;
   issueTag: IssueTag;
-  author: { id: string; name: string | null };
+  author: { id: string; name: string | null } | null;
 }
 
 export interface HeatmapSummary {

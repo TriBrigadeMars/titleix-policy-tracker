@@ -152,7 +152,7 @@ export function CellNoteEditor({
 
           {existing && (
             <p className="text-xs text-muted-foreground">
-              Originally written by {existing.author.name ?? "an editor"}
+              Originally written by {existing.author?.name ?? "an editor"}
               {existing.updatedAt &&
                 ` - last edited ${formatDate(existing.updatedAt)}`}
             </p>

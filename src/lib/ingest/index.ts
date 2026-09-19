@@ -12,6 +12,8 @@ export interface RawInstrument {
   identifier: string;
   title: string;
   status: Instrument["status"];
+  source?: string | null;
+  sourceId?: string | null;
   introducedAt: string | null;
   passedAt: string | null;
   effectiveAt: string | null;
@@ -89,6 +91,8 @@ export async function upsertInstruments(
         lastCheckedAt: now,
       };
 
+      if (row.source !== undefined) updateData.source = row.source;
+      if (row.sourceId !== undefined) updateData.sourceId = row.sourceId;
       if (introducedAt) updateData.introducedAt = introducedAt;
       if (passedAt) updateData.passedAt = passedAt;
       if (effectiveAt) updateData.effectiveAt = effectiveAt;
@@ -108,6 +112,8 @@ export async function upsertInstruments(
           title: row.title,
           status: row.status,
           triageStatus: "UNREVIEWED",
+          source: row.source ?? null,
+          sourceId: row.sourceId ?? null,
           isTitleIXRelevant: false,
           introducedAt,
           passedAt,

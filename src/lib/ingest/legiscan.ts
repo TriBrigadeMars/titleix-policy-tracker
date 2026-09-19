@@ -83,27 +83,32 @@ export function mapLegiScanMasterList(
     const statusValue = value.status;
     const statusDate =
       typeof value.status_date === "string" ? value.status_date : null;
+    const lastActionDate =
+            typeof value.last_action_date === "string" ? value.last_action_date : null;
+    const availableDate = statusDate ?? lastActionDate;
     const isIntroduced = legiscanIsIntroduced(statusValue);
     const isPassed = legiscanIsPassed(statusValue);
 
     rows.push({
-      jurisdictionCode: state,
-      type: "BILL",
-      // Prefix with state + session so identifiers stay unique across states
-      // and sessions that reuse the same bill number.
-      identifier: `${state}${sessionTag ? `-${sessionTag}` : ""}-${value.number}`,
-      title: typeof value.title === "string" ? value.title : "",
-      status: legiscanStatusToInstrumentStatus(statusValue),
-      introducedAt: isIntroduced ? statusDate : null,
-      passedAt: isPassed ? statusDate : null,
+            jurisdictionCode: state,
+            type: "BILL",
+            // Prefix with state + session so identifiers stay unique across states
+            // and sessions that reuse the same bill number.
+            identifier: `${state}${sessionTag ? `-${sessionTag}` : ""}-${value.number}`,
+            source: "legiscan",
+            sourceId: String(value.bill_id),
+            title: typeof value.title === "string" ? value.title : "",
+            status: legiscanStatusToInstrumentStatus(statusValue),
+            introducedAt: isIntroduced ? statusDate : availableDate,
+            passedAt: isPassed ? statusDate : null,
             effectiveAt: null,
-      sourceUrl: typeof value.url === "string" ? value.url : null,
-      rawSummary:
-        typeof value.last_action === "string"
-          ? value.last_action
-          : typeof value.description === "string"
-            ? value.description
-            : null,
+            sourceUrl: typeof value.url === "string" ? value.url : null,
+            rawSummary:
+              typeof value.last_action === "string"
+                ? value.last_action
+                : typeof value.description === "string"
+                  ? value.description
+                  : null,
     });
   }
   return rows;

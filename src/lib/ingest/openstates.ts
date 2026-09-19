@@ -60,6 +60,8 @@ export function mapOpenStatesBills(json: unknown): RawInstrument[] {
       // Prefix with the state code + session so identifiers stay unique even
       // when two states use the same bare bill number.
       identifier: `${stateCode}-${bill.session}-${bill.identifier}`,
+      source: "openstates",
+      sourceId: bill.id,
       title,
       status: typeof bill.latest_passage_date === "string" ? "PASSED" : "PROPOSED",
       introducedAt:

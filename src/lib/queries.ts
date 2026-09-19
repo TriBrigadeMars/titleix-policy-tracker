@@ -88,6 +88,8 @@ export function toInstrument(row: InstrumentRow): Instrument {
     title: row.title,
     status: row.status,
     triageStatus: row.triageStatus,
+    source: row.source,
+    sourceId: row.sourceId,
     introducedAt: iso(row.introducedAt),
     passedAt: iso(row.passedAt),
     effectiveAt: iso(row.effectiveAt),
@@ -106,24 +108,25 @@ export function toInstrument(row: InstrumentRow): Instrument {
       body: n.body,
       createdAt: n.createdAt.toISOString(),
       updatedAt: n.updatedAt.toISOString(),
-      author: { id: n.author.id, name: n.author.name },
+      author: n.author ? { id: n.author.id, name: n.author.name } : null,
     })),
   };
 }
 
-function toCellNote(
+export function toCellNote(
   row: Prisma.CellNoteGetPayload<{ include: typeof cellNoteInclude }>
 ): CellNote {
   return {
     id: row.id,
     jurisdictionId: row.jurisdictionId,
     issueTagId: row.issueTagId,
+    authorId: row.authorId,
     body: row.body,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     jurisdiction: toJurisdiction(row.jurisdiction),
     issueTag: toIssueTag(row.issueTag),
-    author: { id: row.author.id, name: row.author.name },
+    author: row.author ? { id: row.author.id, name: row.author.name } : null,
   };
 }
 

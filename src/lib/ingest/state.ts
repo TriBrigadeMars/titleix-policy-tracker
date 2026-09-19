@@ -39,11 +39,12 @@ function legiscanStatusCode(value: unknown): number | null {
 
 const PASSED_CODES = new Set([3, 4]); // Enrolled, Passed
 const EFFECTIVE_CODES = new Set([7, 8]); // Override, Chaptered
+const TERMINAL_FAILED_CODES = new Set([5, 6]); // Vetoed, Failed
 
 /**
  * Map a LegiScan BillStatus (numeric, or numeric string) to an instrument
  * status. Conservative: anything that is not clearly passed-chamber or enacted
- * falls back to `PROPOSED`.
+ * falls back to `PROPOSED`, while failed or vetoed measures map to `REPEALED`.
  *
  * LegiScan BillStatus enum: 0=NA, 1=Introduced, 2=Engrossed, 3=Enrolled,
  * 4=Passed, 5=Vetoed, 6=Failed, 7=Override, 8=Chaptered, 9=Refer,
@@ -56,6 +57,7 @@ export function legiscanStatusToInstrumentStatus(
   if (code === null) return "PROPOSED";
   if (PASSED_CODES.has(code)) return "PASSED";
   if (EFFECTIVE_CODES.has(code)) return "EFFECTIVE";
+  if (TERMINAL_FAILED_CODES.has(code)) return "REPEALED";
   return "PROPOSED";
 }
 

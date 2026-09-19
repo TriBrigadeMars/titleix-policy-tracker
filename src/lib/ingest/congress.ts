@@ -52,10 +52,13 @@ export function mapCongressBills(json: unknown): RawInstrument[] {
   for (const bill of bills) {
     if (!isCongressBill(bill)) continue;
     const slug = getCongressBillSlug(bill.type);
+    const identifier = `${bill.type}-${bill.number}-${bill.congress}`;
     rows.push({
       jurisdictionCode: "US",
       type: "BILL",
-      identifier: `${bill.type}-${bill.number}-${bill.congress}`,
+      identifier,
+      source: "congress",
+      sourceId: identifier,
       // The spec only drops bills on bad identifier fields; a non-string
       // title still yields a row, so fall back to an empty title.
       title: typeof bill.title === "string" ? bill.title : "",

@@ -397,7 +397,7 @@ export function InstrumentTriageEditor({
                   >
                     <div className="flex justify-between items-start">
                       <span className="font-semibold text-foreground">
-                        {note.author.name ?? "An editor"}
+                        {note.author?.name ?? "An editor"}
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">

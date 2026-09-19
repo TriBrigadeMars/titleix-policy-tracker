@@ -51,10 +51,13 @@ describe("legiscanStatusToInstrumentStatus", () => {
     expect(legiscanStatusToInstrumentStatus(8)).toBe("EFFECTIVE");
   });
 
+  it("maps vetoed/failed to REPEALED", () => {
+    expect(legiscanStatusToInstrumentStatus(5)).toBe("REPEALED");
+    expect(legiscanStatusToInstrumentStatus(6)).toBe("REPEALED");
+  });
+
   it("falls back to PROPOSED for everything else, including non-numeric", () => {
     expect(legiscanStatusToInstrumentStatus(0)).toBe("PROPOSED");
-    expect(legiscanStatusToInstrumentStatus(5)).toBe("PROPOSED");
-    expect(legiscanStatusToInstrumentStatus(6)).toBe("PROPOSED");
     expect(legiscanStatusToInstrumentStatus(12)).toBe("PROPOSED");
     expect(legiscanStatusToInstrumentStatus("bogus")).toBe("PROPOSED");
     expect(legiscanStatusToInstrumentStatus(null)).toBe("PROPOSED");

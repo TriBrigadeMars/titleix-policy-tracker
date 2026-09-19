@@ -32,7 +32,7 @@ export function MatrixCell({
           <div>
             <div className="text-sm whitespace-pre-wrap">{note.body}</div>
             <div className="text-xs text-muted-foreground mt-1">
-              {note.author.name ?? "An editor"}
+              {note.author?.name ?? "An editor"}
               {note.updatedAt
                 ? ` - last edited ${formatDate(note.updatedAt)}`
                 : ""}
