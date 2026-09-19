@@ -14,7 +14,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "electron/**/*.test.ts"],
     env: testDatabaseUrl ? { DATABASE_URL: testDatabaseUrl } : {},
   },
   resolve: {
