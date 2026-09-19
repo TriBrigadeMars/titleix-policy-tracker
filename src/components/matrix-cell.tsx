@@ -5,15 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CellNoteTarget } from "@/components/cell-note-editor";
 import { formatDate } from "@/lib/format-date";
+import { STATUS_COLORS } from "@/lib/status-colors";
 import type { CellNote, Instrument, IssueTag, Jurisdiction } from "@/types";
-
-const STATUS_COLORS: Record<Instrument["status"], string> = {
-  PROPOSED: "bg-blue-100 text-blue-800",
-  PASSED: "bg-green-100 text-green-800",
-  EFFECTIVE: "bg-emerald-100 text-emerald-800",
-  ENJOINED: "bg-yellow-100 text-yellow-800",
-  REPEALED: "bg-gray-100 text-gray-800",
-};
 
 interface MatrixCellProps {
   jurisdiction: Jurisdiction;
@@ -39,7 +32,7 @@ export function MatrixCell({
           <div>
             <div className="text-sm whitespace-pre-wrap">{note.body}</div>
             <div className="text-xs text-muted-foreground mt-1">
-              {note.author.name ?? "An editor"}
+              {note.author?.name ?? "An editor"}
               {note.updatedAt
                 ? ` - last edited ${formatDate(note.updatedAt)}`
                 : ""}

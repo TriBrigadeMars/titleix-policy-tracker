@@ -2,22 +2,11 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guards";
 import { upsertInstruments } from "@/lib/ingest";
 import { congressAdapter } from "@/lib/ingest/congress";
+import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
 const MAX_INGEST_LIMIT = 100;
 const DEFAULT_CONGRESS = 119;
 const DEFAULT_LIMIT = 50;
-
-function paramInt(
-  value: string | null,
-  fallback: number,
-  min: number,
-  max: number
-): number {
-  if (value === null) return fallback;
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, Math.trunc(n)));
-}
 
 /**
  * Trigger a Congress.gov bill ingest. ADMIN-only: this is a bulk write, not
@@ -43,9 +32,17 @@ export async function POST(request: Request) {
   try {
     const rows = await congressAdapter.fetch({ congress, limit });
     const result = await upsertInstruments(rows);
-    return NextResponse.json({ source: congressAdapter.name, ...result });
+    return NextResponse.json({
+      source: congressAdapter.name,
+      ...result,
+      limit,
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ingest failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Log server-side; the response body stays generic.
+    console.error("[ingest/congress] failed", error);
+    return NextResponse.json(
+      { error: INGEST_GENERIC_ERROR },
+      { status: 502 }
+    );
   }
 }

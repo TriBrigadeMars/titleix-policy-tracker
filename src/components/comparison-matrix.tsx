@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ExternalLink } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -15,6 +17,7 @@ import {
   type CellNoteTarget,
 } from "@/components/cell-note-editor";
 import { MatrixCell } from "@/components/matrix-cell";
+import { STATUS_COLORS } from "@/lib/status-colors";
 import type { CellNote, Instrument, IssueTag, Jurisdiction } from "@/types";
 
 interface ComparisonMatrixProps {
@@ -66,6 +69,22 @@ export function ComparisonMatrix({
       }
     }
     return map;
+  }, [instruments]);
+
+  const untaggedInstrumentsByJurisdiction = useMemo(() => {
+    const map = new Map<string, Instrument[]>();
+    for (const inst of instruments) {
+      if (!inst.issueTags || inst.issueTags.length === 0) {
+        const list = map.get(inst.jurisdictionId);
+        if (list) list.push(inst);
+        else map.set(inst.jurisdictionId, [inst]);
+      }
+    }
+    return map;
+  }, [instruments]);
+
+  const hasUntagged = useMemo(() => {
+    return instruments.some((inst) => !inst.issueTags || inst.issueTags.length === 0);
   }, [instruments]);
 
   function handleSaved(note: CellNote) {
@@ -154,6 +173,66 @@ export function ComparisonMatrix({
                 })}
               </TableRow>
             ))}
+            {hasUntagged && (
+              <TableRow className="bg-muted/20">
+                <TableCell className="font-medium sticky left-0 bg-background">
+                  <div className="font-semibold text-amber-700 dark:text-amber-400">
+                    Untagged
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Relevant instruments without an assigned issue tag
+                  </div>
+                </TableCell>
+                {jurisdictions.map((jurisdiction) => {
+                  const untaggedList =
+                    untaggedInstrumentsByJurisdiction.get(jurisdiction.id) ?? [];
+                  return (
+                    <TableCell
+                      key={`${jurisdiction.id}-untagged`}
+                      className="align-top"
+                    >
+                      {untaggedList.length > 0 ? (
+                        <div className="space-y-1">
+                          {untaggedList.map((inst) => (
+                            <div
+                              key={inst.id}
+                              className="text-xs border rounded p-1.5 bg-background"
+                            >
+                              <div className="flex items-center gap-1">
+                                <Badge
+                                  variant="secondary"
+                                  className={STATUS_COLORS[inst.status]}
+                                >
+                                  {inst.status}
+                                </Badge>
+                                <span className="font-mono text-xs">
+                                  {inst.identifier}
+                                </span>
+                              </div>
+                              <div className="mt-1 font-medium">{inst.title}</div>
+                              {inst.sourceUrl && (
+                                <a
+                                  href={inst.sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline flex items-center gap-1 mt-1"
+                                >
+                                  Source <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">
+                          No data
+                        </span>
+                      )}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>

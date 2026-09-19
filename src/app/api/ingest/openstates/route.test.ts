@@ -103,28 +103,38 @@ describe("POST /api/ingest/openstates — ADMIN", () => {
       total: 1,
       upserted: 1,
       skipped: 0,
+      limit: 10,
     });
   });
 
-  it("uses default jurisdiction and limit, without session", async () => {
+  it("requires an explicit jurisdiction instead of defaulting to nc", async () => {
     signIn(ADMIN);
-    await POST(post(base));
+    const response = await POST(post(base));
+    expect(response.status).toBe(400);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses the default limit, without session", async () => {
+    signIn(ADMIN);
+    await POST(post(`${base}?jurisdiction=nc`));
     expect(fetch).toHaveBeenCalledWith({ jurisdiction: "nc", limit: 50 });
   });
 
   it("clamps limit to the max of 100", async () => {
     signIn(ADMIN);
-    await POST(post(`${base}?limit=9999`));
+    await POST(post(`${base}?jurisdiction=nc&limit=9999`));
     expect(fetch).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 100 })
     );
   });
 
-  it("returns 502 when the adapter fetch fails", async () => {
+  it("returns a generic 502 without leaking the upstream error", async () => {
     signIn(ADMIN);
     fetch.mockRejectedValue(new Error("upstream down"));
-    const response = await POST(post(base));
+    const response = await POST(post(`${base}?jurisdiction=nc`));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "upstream down" });
+    expect(await response.json()).toEqual({
+      error: "Ingest failed. Check server logs for details.",
+    });
   });
 });

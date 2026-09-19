@@ -2,9 +2,11 @@
 
 Title IX Policy Tracker is a signed-in Next.js 15 app (App Router, Prisma/Postgres, Auth.js Google OAuth, Tailwind/shadcn) for comparing state and federal law that can affect Title IX.
 
-Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, **50-state heatmap**, and **admin user-role management** slices are real and structurally sound. Public view is not.
+Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, **50-state heatmap**, and **admin user-role management** slices are real and structurally sound. Public read of the comparison matrix and heatmap is real too; everything that writes is still signed-in.
 
 Merged through [PR #15](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/15) on `main`.
+
+On top of that, this branch carries the **2026-09-18 thermo-nuclear fix stack** (Phases 1–3: ingest reliability, triage encoding, heatmap SQL aggregation, chunked ingest, fail-closed API keys). Those commits are on this branch — **not necessarily merged to `main` yet**, and there is no PR number for them to cite. Phase 4 (this change) is docs + dedup only: it extracts the duplicated ingest route helpers and corrects this documentation. It adds no product behavior.
 
 ## What exists
 
@@ -23,11 +25,13 @@ Do not "simplify" this. Do not call `auth()` from edge middleware.
 
 ### Domain schema and seed
 
-- Jurisdictions: `US` + 50 states (`FEDERAL` | `STATE`).
+- Jurisdictions: `US` + 50 states + `DC` (seeded as `STATE`).
 - Eight issue tags (matrix rows), seeded in `prisma/seed.ts`.
 - `Instrument` with types `BILL` | `STATUTE` | `REGULATION` and statuses `PROPOSED` | `PASSED` | `EFFECTIVE` | `ENJOINED` | `REPEALED`.
-- Unique `(jurisdictionId, type, identifier)` so ingest can upsert.
+- Unique `(jurisdictionId, type, identifier)` so ingest can upsert. A second optional unique `(source, sourceId)` keys rows by their stable upstream id.
+- Editor triage encoding is `TriageStatus` (`UNREVIEWED` | `RELEVANT` | `NOT_RELEVANT`), centralized in `src/lib/triage.ts`. `isTitleIXRelevant` stays on the row because the matrix filters on it directly; ingest must never overwrite triage fields or `status` on update.
 - `InstrumentIssueTag` junction, `InstrumentNote`, `CellNote` (unique on jurisdiction x issue tag).
+- `InstrumentNote.authorId` and `CellNote.authorId` are optional and `onDelete: SetNull`, so deleting a user keeps their notes.
 - Cell note body: zod + `@db.VarChar(10000)`.
 - Initial migration: `prisma/migrations/20260918000000_init`.
 - CI runs `prisma migrate deploy` against workflow Postgres, then lint, typecheck, build, test.
@@ -92,9 +96,22 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 
 | Gap | Notes |
 |-----|--------|
-| Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
+| Public heatmap vs signed-in compare | The heatmap and comparison matrix are now anonymously readable at `/heatmap` and `/`; triage, cell-note writes, and admin remain signed-in only. |
 | Extra instrument types | `GUIDANCE`, `EXECUTIVE_ORDER`, `COURT_ORDER` need an explicit migration when needed. |
-| Integration test breadth | Only the ingest upsert path is DB-backed. Auth guards, cell-note writes, and the triage `PATCH` still rely on mocked Prisma. |
+| Integration test breadth | Ingest, cell-note writes, and the triage `PATCH` are DB-backed. Auth guards still rely on mocked Prisma. |
+| Public anonymous view | Read-only matrix + heatmap are public; the pages carry a signed-out note pointing at `/sign-in`, and editor chrome stays off without a session. |
+| Write-path integration tests | Covered by `*.integration.test.ts` alongside the route unit tests: cell-note `PUT`/`DELETE` and instrument triage `PATCH`, including that a re-ingest does not clobber editor triage or lifecycle status. These skip unless `TEST_DATABASE_URL` is set (CI sets it); auth guards are still mocked-Prisma only. |
+
+Phase 4 (the current change) is **docs + dedup only** — it extracts
+`INGEST_GENERIC_ERROR` / `paramInt` into `src/lib/ingest/route-helpers.ts` and
+corrects this documentation. It does not build the public view, add instrument
+types, or widen integration-test coverage.
+
+The public view slice sits on top of it: `/` and `/heatmap` render for anonymous
+visitors, each with a short signed-out note linking to `/sign-in`. Editing is
+decided by `canEditRole(session)` in `src/lib/roles.ts`, which is `true` only for
+a signed-in `EDITOR`/`ADMIN`; anonymous visitors are given no synthetic role.
+Triage, cell-note writes, ingest, and admin stay behind `src/lib/auth-guards.ts`.
 
 ## Canonical files (do not fork)
 
@@ -108,26 +125,40 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 | Client DTOs | `src/types/index.ts` |
 | Dates in UI | `src/lib/format-date.ts` |
 | Domain rules | `ARCHITECTURE.md` |
+| Ingest route plumbing | `src/lib/ingest/route-helpers.ts` |
 
 ## Ingest (Congress.gov federal bills)
 
 - `src/lib/ingest/index.ts` — the data layer. `RawInstrument` type
   (source-agnostic, keyed by jurisdiction code), `IngestAdapter` interface,
-  and `upsertInstruments()` which resolves jurisdiction codes to ids, then
-  upserts on `(jurisdictionId, type, identifier)` inside a single transaction.
+  and `upsertInstruments()` which resolves jurisdiction codes to ids per chunk,
+  then upserts on `(jurisdictionId, type, identifier)`.
 - Machine fields (title, status, dates, sourceUrl, rawSummary, lastCheckedAt)
   are overwritten on update. Editor fields (isTitleIXRelevant,
-  relevanceConfidence) are never touched by ingest — that is human triage.
+  relevanceConfidence, triageStatus) and `status` are never touched by ingest —
+  that is human triage and lifecycle correction.
+- Writes are chunked: `INGEST_CHUNK_SIZE` (50) rows per `$transaction`. Each
+  chunk commits on its own, so a later chunk failure leaves earlier chunks
+  committed and the error is rethrown. Retry is idempotent because the write
+  keys on `(jurisdictionId, type, identifier)` and only rewrites machine fields.
+- Upstream fetches abort after `FETCH_TIMEOUT_MS` (10s).
+- All three adapters fail closed when their API key is missing; they never issue
+  an unkeyed request.
 - `src/lib/ingest/congress.ts` — `mapCongressBills()` pure mapper
   (Congress.gov bills JSON → `RawInstrument[]`, skips malformed bills) and
   `congressAdapter` implementing `IngestAdapter` (fetches via Congress.gov v3
-  API, optional `CONGRESS_GOV_API_KEY` env).
+  API, requires `CONGRESS_GOV_API_KEY`).
 - `POST /api/ingest/congress` — ADMIN-only trigger. Query params `congress`
   (default 119) and `limit` (default 50, capped at 100). Returns
-  `{ source, total, upserted, skipped }`. Returns 502 on upstream failure.
+  `{ source, total, upserted, skipped }`. Returns a generic 502 body on upstream
+  failure; the real error (which can carry API keys or internal URLs) is logged
+  server-side only.
+- `src/lib/ingest/route-helpers.ts` — `INGEST_GENERIC_ERROR` and `paramInt()`
+  (clamp + truncate, fallback on non-finite) shared by all three trigger routes.
+  Each route keeps its own limits and its own POST handler.
 - Tests: `upsertInstruments` (mocked Prisma — jurisdiction resolution, unique
-  key, editor-field preservation, skip-on-unknown-code, transaction), Congress
-  mapping (table-driven, 7 cases), route authz (401/403/ADMIN/502/param
+  key, editor-field preservation, skip-on-unknown-code, chunked transactions),
+  Congress mapping (table-driven, 7 cases), route authz (401/403/ADMIN/502/param
   clamping).
 
 ### State bill ingest (LegiScan & OpenStates)
@@ -139,18 +170,25 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
   (OpenStates v3 bills JSON → `RawInstrument[]`, derives the state code from
   the OCD jurisdiction id, skips foreign/malformed bills) plus
   `openStatesAdapter` (fetches `https://v3.openstates.org/bills` with the
-  `X-API-KEY` header from `OPEN_STATES_API_KEY`).
-- `POST /api/ingest/openstates` — ADMIN-only trigger. Query params
-  `jurisdiction` (default `nc`), `session`, `limit` (default 50, capped 100).
+  `X-API-KEY` header from `OPEN_STATES_API_KEY`; fails closed when unset).
+- `POST /api/ingest/openstates` — ADMIN-only trigger. `jurisdiction` is
+  **required** (400 without it; there is no silent `nc` default). Optional
+  `session` and `limit` (default 50, capped 100 — one page per request).
 - `src/lib/ingest/legiscan.ts` — `mapLegiScanMasterList()` pure mapper
   (LegiScan `getMasterList` JSON → `RawInstrument[]`, handles the numeric-key
   `masterlist` plus the special `session` key and string/number `status`) plus
-  `legiScanAdapter` (fetches `https://api.legiscan.com/?op=getMasterList` using
-  `LEGISCAN_API_KEY`).
+  `mapLegiScanMasterListBatches()`, a generator yielding `INGEST_CHUNK_SIZE`
+  batches so a full-session dump is never copied into a second full array, and
+  `legiScanAdapter` (fetches
+  `https://api.legiscan.com/?op=getMasterList` using `LEGISCAN_API_KEY`, which
+  it requires — it fails closed when unset).
 - `POST /api/ingest/legiscan` — ADMIN-only trigger. Query params `id` (session
-  id, preferred) or `state` (two-letter abbreviation).
-- Tests: table-driven mappers for both adapters, shared helper tests, and route
-  authz (401/403/ADMIN/502/params) for both triggers.
+  id, preferred) or `state` (two-letter abbreviation). `limit` is an explicit
+  opt-in cap for admin testing; **omitted, the whole session is ingested**
+  because `getMasterList` is a full session dump.
+- Tests: table-driven mappers for both adapters, shared helper tests, batch
+  generator coverage, and route authz (401/403/ADMIN/502/params) for both
+  triggers.
 
 ## Editor triage & Instrument notes
 
@@ -166,7 +204,7 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 
 - `src/app/(protected)/heatmap/page.tsx` — RSC page for a national overview visualizing Title IX policy and legislative activity across all 50 states + DC + federal jurisdiction.
 - `src/components/state-heatmap.tsx` — 12×8 positioned grid tile layout representing all 51 jurisdictions with dynamic HSL color-scaling based on Title IX relevance volume, interactive sidebar detail cards, and direct deep-links into the comparison matrix (`/?j=US,{code}`).
-- `src/lib/queries.ts` — `getHeatmapSummaries()` aggregates per-jurisdiction metrics (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) plus a shared `totalIssueTags` (all seeded tags) via parallel Prisma queries and in-memory joins without raw SQL or schema migrations. The tooltip renders "X of N" from `totalIssueTags` rather than a hardcoded 8.
+- `src/lib/queries.ts` — `getHeatmapSummaries()` aggregates per-jurisdiction metrics (`relevantCount`, `pendingCount`, `issueTagCount`, `cellNoteCount`) plus a shared `totalIssueTags` (all seeded tags). The relevant/pending/note counts use Prisma `groupBy`; the distinct-issue-tag count is a single SQL `GROUP BY` over `instrument_issue_tags` joined to `instruments`, so the link table is never loaded row-by-row into memory. No schema migration is involved. The tooltip renders "X of N" from `totalIssueTags` rather than a hardcoded 8.
 - `src/types/index.ts` — `HeatmapSummary` interface exported for clean DTO boundaries.
 - `src/components/site-header.tsx` — "Heatmap" link added to the main navigation for all authenticated users.
 
@@ -183,8 +221,11 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 
 ## Suggested next slice
 
-1. Public heatmap/matrix view for anonymous users.
+1. Public heatmap/matrix view for anonymous users â€” **done**: both pages render
+   signed out with a read-only note; editor chrome requires a session.
 2. Extend DB-backed integration tests to the write paths (cell notes, triage
-   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place.
+   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place. â€” **done**:
+   both write paths have `*.integration.test.ts` coverage, including re-ingest
+   preserving editor triage.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.

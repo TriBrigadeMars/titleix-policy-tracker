@@ -1,9 +1,25 @@
-import type { IngestAdapter, RawInstrument } from "@/lib/ingest";
+import {
+  FETCH_TIMEOUT_MS,
+  INGEST_CHUNK_SIZE,
+  type IngestAdapter,
+  type RawInstrument,
+} from "@/lib/ingest";
 import {
   legiscanIsIntroduced,
   legiscanIsPassed,
   legiscanStatusToInstrumentStatus,
 } from "@/lib/ingest/state";
+
+export interface LegiScanMapOptions {
+  /** Fallback jurisdiction code for bills whose `state` field is absent. */
+  state?: string;
+  /**
+   * Optional cap on how many rows are mapped. Omitted (or non-positive) means
+   * map the entire session, which is the production default: `getMasterList`
+   * is a full session dump and dropping bills silently would lose coverage.
+   */
+  limit?: number;
+}
 
 interface LegiScanMasterListItem {
   bill_id: number;
@@ -44,6 +60,92 @@ function legiScanState(item: LegiScanMasterListItem): string | null {
   return null;
 }
 
+function toRawInstrument(
+  value: LegiScanMasterListItem,
+  state: string,
+  sessionTag: string | null
+): RawInstrument {
+  const statusValue = value.status;
+  const statusDate =
+    typeof value.status_date === "string" ? value.status_date : null;
+  const lastActionDate =
+    typeof value.last_action_date === "string" ? value.last_action_date : null;
+  const availableDate = statusDate ?? lastActionDate;
+  const isIntroduced = legiscanIsIntroduced(statusValue);
+  const isPassed = legiscanIsPassed(statusValue);
+
+  return {
+    jurisdictionCode: state,
+    type: "BILL",
+    // Prefix with state + session so identifiers stay unique across states
+    // and sessions that reuse the same bill number.
+    identifier: `${state}${sessionTag ? `-${sessionTag}` : ""}-${value.number}`,
+    source: "legiscan",
+    sourceId: String(value.bill_id),
+    title: typeof value.title === "string" ? value.title : "",
+    status: legiscanStatusToInstrumentStatus(statusValue),
+    introducedAt: isIntroduced ? statusDate : availableDate,
+    passedAt: isPassed ? statusDate : null,
+    effectiveAt: null,
+    sourceUrl: typeof value.url === "string" ? value.url : null,
+    rawSummary:
+      typeof value.last_action === "string"
+        ? value.last_action
+        : typeof value.description === "string"
+          ? value.description
+          : null,
+  };
+}
+
+/**
+ * Map a parsed LegiScan `getMasterList` response to raw instruments, yielding
+ * {@link INGEST_CHUNK_SIZE}-sized batches instead of one array.
+ *
+ * `getMasterList` is a full session dump — a large state can return tens of
+ * thousands of bills — so callers that only need to hand rows to
+ * {@link upsertInstruments} can stream batch by batch rather than materializing
+ * a second full copy of the mapped rows alongside the parsed JSON body. Use
+ * {@link mapLegiScanMasterList} when a plain array is more convenient.
+ */
+export function* mapLegiScanMasterListBatches(
+  json: unknown,
+  opts?: LegiScanMapOptions
+): Generator<RawInstrument[]> {
+  if (!isRecord(json)) return;
+  const masterlist = json.masterlist;
+  if (!isRecord(masterlist)) return;
+
+  const fallbackState = opts?.state;
+  const limit = opts?.limit;
+  const session = isRecord(masterlist.session)
+    ? (masterlist.session as unknown as LegiScanSession)
+    : null;
+  const sessionTag =
+    typeof session?.session_tag === "string"
+      ? session.session_tag
+      : typeof session?.session_name === "string"
+        ? session.session_name
+        : null;
+
+  let batch: RawInstrument[] = [];
+  let mapped = 0;
+  for (const [key, value] of Object.entries(masterlist)) {
+    if (key === "session") continue;
+    if (!isMasterListItem(value)) continue;
+    const state = legiScanState(value) ?? fallbackState;
+    if (!state) continue;
+
+    batch.push(toRawInstrument(value, state, sessionTag));
+    mapped += 1;
+    if (batch.length >= INGEST_CHUNK_SIZE) {
+      yield batch;
+      batch = [];
+    }
+    if (limit !== undefined && limit > 0 && mapped >= limit) break;
+  }
+  if (batch.length > 0) yield batch;
+}
+
 /**
  * Map a parsed LegiScan `getMasterList` response to raw instruments. Pure: no
  * I/O, no database.
@@ -56,55 +158,11 @@ function legiScanState(item: LegiScanMasterListItem): string | null {
  */
 export function mapLegiScanMasterList(
   json: unknown,
-  opts?: { state?: string }
+  opts?: LegiScanMapOptions
 ): RawInstrument[] {
-  if (!isRecord(json)) return [];
-  const masterlist = json.masterlist;
-  if (!isRecord(masterlist)) return [];
-
-  const fallbackState = opts?.state;
-  const session = isRecord(masterlist.session)
-      ? (masterlist.session as unknown as LegiScanSession)
-    : null;
-  const sessionTag =
-    typeof session?.session_tag === "string"
-      ? session.session_tag
-      : typeof session?.session_name === "string"
-        ? session.session_name
-        : null;
-
   const rows: RawInstrument[] = [];
-  for (const [key, value] of Object.entries(masterlist)) {
-    if (key === "session") continue;
-    if (!isMasterListItem(value)) continue;
-    const state = legiScanState(value) ?? fallbackState;
-    if (!state) continue;
-
-    const statusValue = value.status;
-    const statusDate =
-      typeof value.status_date === "string" ? value.status_date : null;
-    const isIntroduced = legiscanIsIntroduced(statusValue);
-    const isPassed = legiscanIsPassed(statusValue);
-
-    rows.push({
-      jurisdictionCode: state,
-      type: "BILL",
-      // Prefix with state + session so identifiers stay unique across states
-      // and sessions that reuse the same bill number.
-      identifier: `${state}${sessionTag ? `-${sessionTag}` : ""}-${value.number}`,
-      title: typeof value.title === "string" ? value.title : "",
-      status: legiscanStatusToInstrumentStatus(statusValue),
-      introducedAt: isIntroduced ? statusDate : null,
-      passedAt: isPassed ? statusDate : null,
-            effectiveAt: null,
-      sourceUrl: typeof value.url === "string" ? value.url : null,
-      rawSummary:
-        typeof value.last_action === "string"
-          ? value.last_action
-          : typeof value.description === "string"
-            ? value.description
-            : null,
-    });
+  for (const batch of mapLegiScanMasterListBatches(json, opts)) {
+    rows.push(...batch);
   }
   return rows;
 }
@@ -112,6 +170,11 @@ export function mapLegiScanMasterList(
 /**
  * The `getMasterList` call accepts `id=<session_id>`; the state is resolved
  * from each bill's `state` field (or passed through when the API omits it).
+ *
+ * By default the whole session is ingested: `getMasterList` is a full session
+ * dump and silently truncating it would drop bills. `opts.limit` is an explicit
+ * opt-in cap for admin testing, and is applied while mapping so the adapter
+ * never materializes the full mapped array.
  */
 export const legiScanAdapter: IngestAdapter = {
   name: "legiscan",
@@ -134,7 +197,9 @@ export const legiScanAdapter: IngestAdapter = {
     }
 
     const url = `${LEGISCAN_API_URL}?${params.toString()}`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) {
       throw new Error(`LegiScan request failed with status ${res.status}`);
     }
@@ -148,6 +213,10 @@ export const legiScanAdapter: IngestAdapter = {
     }
     const state =
       typeof opts?.state === "string" ? opts.state.toUpperCase() : undefined;
-    return mapLegiScanMasterList(body, { state });
+    const limit = Number(opts?.limit);
+    return mapLegiScanMasterList(body, {
+      state,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+    });
   },
 };

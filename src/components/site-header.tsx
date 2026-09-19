@@ -21,41 +21,41 @@ export async function SiteHeader() {
           <Link href="/" className="font-semibold text-lg tracking-tight">
             Title IX Policy Tracker
           </Link>
-          {session?.user && (
-            <nav className="flex items-center gap-4 text-sm font-medium">
+          <nav className="flex items-center gap-4 text-sm font-medium">
+            <Link
+              href="/"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Comparison
+            </Link>
+            <Link
+              href="/heatmap"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Heatmap
+            </Link>
+            {/* Only linked when authorized: these routes redirect signed-out
+                visitors to sign-in, so showing them would be misleading. */}
+            {isEditor && (
               <Link
-                href="/"
+                href="/triage"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Comparison
+                Triage
               </Link>
+            )}
+            {isAdmin && (
               <Link
-                href="/heatmap"
+                href="/admin"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >
-                Heatmap
+                Admin
               </Link>
-              {isEditor && (
-                <Link
-                  href="/triage"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Triage
-                </Link>
-              )}
-              {isAdmin && (
-                <Link
-                  href="/admin"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Admin
-                </Link>
-              )}
-            </nav>
-          )}
+            )}
+          </nav>
         </div>
 
-        {session?.user && (
+        {session?.user ? (
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
               {session.user.name ?? session.user.email}
@@ -66,6 +66,12 @@ export async function SiteHeader() {
                 Sign out
               </Button>
             </form>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/sign-in">Sign in</Link>
+            </Button>
           </div>
         )}
       </div>

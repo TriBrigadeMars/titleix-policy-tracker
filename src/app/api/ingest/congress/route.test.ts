@@ -104,6 +104,7 @@ describe("POST /api/ingest/congress — ADMIN", () => {
       total: 1,
       upserted: 1,
       skipped: 0,
+      limit: 10,
     });
   });
 
@@ -121,12 +122,14 @@ describe("POST /api/ingest/congress — ADMIN", () => {
     );
   });
 
-  it("returns 502 when the adapter fetch fails", async () => {
+  it("returns a generic 502 without leaking the upstream error", async () => {
     signIn(ADMIN);
     fetch.mockRejectedValue(new Error("upstream down"));
     const response = await POST(post(base));
     expect(response.status).toBe(502);
     const body = await response.json();
-    expect(body).toEqual({ error: "upstream down" });
+    expect(body).toEqual({
+      error: "Ingest failed. Check server logs for details.",
+    });
   });
 });

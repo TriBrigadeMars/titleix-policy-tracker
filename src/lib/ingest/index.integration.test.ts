@@ -174,7 +174,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     expect(rows[0].id).toBe(created?.id);
     expect(rows[0]).toMatchObject({
       title: "Amended title",
-      status: "PASSED",
+      status: "PROPOSED",
       sourceUrl: "https://example.gov/instruments/update/v2",
       rawSummary: "Amended summary.",
     });
@@ -193,7 +193,11 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
 
     await prisma.instrument.update({
       where: { id: created!.id },
-      data: { isTitleIXRelevant: true, relevanceConfidence: 85 },
+      data: {
+        triageStatus: "RELEVANT",
+        isTitleIXRelevant: true,
+        relevanceConfidence: 85,
+      },
     });
 
     await upsertInstruments([
@@ -209,7 +213,8 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     const stored = await findByKey(fedId, "BILL", identifier);
     expect(stored).toMatchObject({
       title: "Re-ingested title",
-      status: "EFFECTIVE",
+      status: "PROPOSED",
+      triageStatus: "RELEVANT",
       isTitleIXRelevant: true,
       relevanceConfidence: 85,
     });
@@ -270,7 +275,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     expect(await findByKey(fedId, "REGULATION", shared)).toBeNull();
   });
 
-  it("rolls back the whole batch when the database rejects one row", async () => {
+  it("rolls back the failing chunk and rethrows when the database rejects one row", async () => {
     const good = rawRow({ jurisdictionCode: fedCode, identifier: id("atomic") });
     // Over Postgres's btree index entry limit for
     // instruments_jurisdiction_id_type_identifier_key, so this row is rejected
@@ -281,22 +286,21 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       jurisdictionCode: fedCode,
       identifier: `${RUN_ID}-${randomBytes(3000).toString("hex")}`,
     });
-    const before = await prisma.instrument.count({
-      where: { identifier: { startsWith: RUN_ID } },
-    });
 
     await expect(upsertInstruments([good, oversized])).rejects.toThrow();
 
-    // The batch is one transaction, so the row that would have succeeded is
-    // rolled back too and the run's row count is unchanged.
+    // Both rows land in the same chunk, so the chunk's transaction rolls back
+    // and neither row is committed. (Chunks commit independently: rows in an
+    // earlier chunk would stay committed, which is why ingest retries are safe
+    // but not all-or-nothing.)
     expect(
       await prisma.instrument.count({ where: { identifier: good.identifier } })
     ).toBe(0);
     expect(
       await prisma.instrument.count({
-        where: { identifier: { startsWith: RUN_ID } },
+        where: { identifier: oversized.identifier },
       })
-    ).toBe(before);
+    ).toBe(0);
   });
 
   it("stores Congress.gov mapper output end to end", async () => {
@@ -329,7 +333,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       identifier: `hr-${RUN_ID}-119`,
       title: "Title IX Accountability Act",
       status: "PROPOSED",
-      sourceUrl: `https://www.congress.gov/bill/119th-congress/hr/${RUN_ID}`,
+      sourceUrl: `https://www.congress.gov/bill/119th-congress/house-bill/${RUN_ID}`,
       rawSummary: "Referred to the Committee on Education and the Workforce.",
       isTitleIXRelevant: false,
     });

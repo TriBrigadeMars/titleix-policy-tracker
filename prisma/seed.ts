@@ -12,6 +12,7 @@ const JURISDICTIONS = [
   { code: "CO", name: "Colorado", level: "STATE" },
   { code: "CT", name: "Connecticut", level: "STATE" },
   { code: "DE", name: "Delaware", level: "STATE" },
+  { code: "DC", name: "District of Columbia", level: "STATE" },
   { code: "FL", name: "Florida", level: "STATE" },
   { code: "GA", name: "Georgia", level: "STATE" },
   { code: "HI", name: "Hawaii", level: "STATE" },

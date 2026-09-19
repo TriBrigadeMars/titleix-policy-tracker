@@ -108,7 +108,7 @@ function StateTile({ summary, maxCount, onHover }: StateTileProps) {
   const isFederal = summary.jurisdiction.level === "FEDERAL";
   const compareUrl =
     summary.jurisdiction.code === "US"
-      ? "/?j=US"
+      ? "/?j=US,CA"
       : `/?j=US,${summary.jurisdiction.code}`;
 
   return (
@@ -121,6 +121,8 @@ function StateTile({ summary, maxCount, onHover }: StateTileProps) {
       }}
       onMouseEnter={() => onHover(summary)}
       onMouseLeave={() => onHover(null)}
+      onFocus={() => onHover(summary)}
+      onBlur={() => onHover(null)}
     >
       <div
         className={`

@@ -15,7 +15,7 @@ describe("instrumentComparisonWhere", () => {
       })
     ).toEqual({
       jurisdictionId: { in: ["j1", "j2"] },
-      isTitleIXRelevant: true,
+      triageStatus: "RELEVANT",
     });
   });
 
@@ -27,7 +27,7 @@ describe("instrumentComparisonWhere", () => {
       })
     ).toEqual({
       jurisdictionId: { in: ["j1"] },
-      isTitleIXRelevant: true,
+      triageStatus: "RELEVANT",
       issueTags: { some: { issueTagId: { in: ["t1"] } } },
     });
   });
@@ -65,8 +65,7 @@ describe("instrumentTriageWhere", () => {
         relevance: "unreviewed",
       })
     ).toEqual({
-      isTitleIXRelevant: false,
-      relevanceConfidence: null,
+      triageStatus: "UNREVIEWED",
     });
   });
 
@@ -80,7 +79,7 @@ describe("instrumentTriageWhere", () => {
     ).toEqual({
       jurisdictionId: "jur_1",
       status: "PROPOSED",
-      isTitleIXRelevant: true,
+      triageStatus: "RELEVANT",
     });
   });
 
@@ -90,8 +89,7 @@ describe("instrumentTriageWhere", () => {
         relevance: "not_relevant",
       })
     ).toEqual({
-      isTitleIXRelevant: false,
-      relevanceConfidence: { not: null },
+      triageStatus: "NOT_RELEVANT",
     });
   });
 

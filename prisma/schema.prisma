@@ -121,6 +121,9 @@ model Instrument {
   identifier        String           // bill number, CFR cite, chapter, etc.
   title             String
   status            InstrumentStatus
+  triageStatus      TriageStatus     @default(UNREVIEWED) @map("triage_status")
+  source            String?          @map("source")
+  sourceId          String?          @map("source_id")
   introducedAt      DateTime?        @map("introduced_at")
   passedAt          DateTime?        @map("passed_at")
   effectiveAt       DateTime?        @map("effective_at")
@@ -137,11 +140,21 @@ model Instrument {
   notes          InstrumentNote[]
 
   @@unique([jurisdictionId, type, identifier])
+  @@unique([source, sourceId])
   @@index([jurisdictionId, status])
+  @@index([triageStatus, status])
   @@index([isTitleIXRelevant, status])
   @@index([type])
   @@index([lastCheckedAt])
   @@map("instruments")
+}
+
+enum TriageStatus {
+  UNREVIEWED
+  RELEVANT
+  NOT_RELEVANT
+
+  @@map("triage_status")
 }
 
 // Instrument types. Adding a value requires a Prisma migration.
@@ -183,13 +196,13 @@ model InstrumentIssueTag {
 model InstrumentNote {
   id           String   @id @default(cuid())
   instrumentId String   @map("instrument_id")
-  authorId     String   @map("author_id")
+  authorId     String?  @map("author_id")
   body         String   @db.Text
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
-  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author     User?      @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@map("instrument_notes")
 }
@@ -200,14 +213,14 @@ model CellNote {
   id             String   @id @default(cuid())
   jurisdictionId String   @map("jurisdiction_id")
   issueTagId     String   @map("issue_tag_id")
-  authorId       String   @map("author_id")
+  authorId       String?  @map("author_id")
   body           String   @db.VarChar(10000)
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   jurisdiction Jurisdiction @relation(fields: [jurisdictionId], references: [id], onDelete: Cascade)
   issueTag     IssueTag     @relation(fields: [issueTagId], references: [id], onDelete: Cascade)
-  author       User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author       User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
 
   @@unique([jurisdictionId, issueTagId])
   @@map("cell_notes")

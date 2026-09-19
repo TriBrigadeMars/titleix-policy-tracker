@@ -17,15 +17,8 @@ import { InstrumentTriageEditor } from "@/components/instrument-triage-editor";
 import { formatDate } from "@/lib/format-date";
 import type { TriageQuery } from "@/lib/search-params";
 import { triageStatus } from "@/lib/triage";
+import { STATUS_COLORS } from "@/lib/status-colors";
 import type { Instrument, IssueTag, Jurisdiction } from "@/types";
-
-const STATUS_COLORS: Record<Instrument["status"], string> = {
-  PROPOSED: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-  PASSED: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  EFFECTIVE: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-  ENJOINED: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
-  REPEALED: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
-};
 
 interface TriageDashboardProps {
   jurisdictions: Jurisdiction[];
@@ -198,10 +191,10 @@ export function TriageDashboard({
           <div className="grid grid-cols-1 gap-4">
             {instruments.map((inst) => {
               const hasNotes = (inst.notes?.length ?? 0) > 0;
-                          const status = triageStatus(
-                            inst.isTitleIXRelevant,
-                            inst.relevanceConfidence
-                          );
+              const status = triageStatus(
+                inst.triageStatus ?? inst.isTitleIXRelevant,
+                inst.relevanceConfidence
+              );
 
               return (
                 <Card
@@ -227,14 +220,14 @@ export function TriageDashboard({
                         </span>
 
                         {/* Relevance badge */}
-                                                {status === "unreviewed" ? (
+                        {status === "UNREVIEWED" ? (
                           <Badge
                             variant="outline"
                             className="border-amber-500/50 text-amber-600 dark:text-amber-400 gap-1"
                           >
                             <HelpCircle className="h-3 w-3" /> Unreviewed
                           </Badge>
-                                                ) : status === "relevant" ? (
+                        ) : status === "RELEVANT" ? (
                           <Badge
                             variant="secondary"
                             className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 gap-1"

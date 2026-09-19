@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         body: note.body,
         createdAt: note.createdAt.toISOString(),
         updatedAt: note.updatedAt.toISOString(),
-        author: { id: note.author.id, name: note.author.name },
+        author: note.author ? { id: note.author.id, name: note.author.name } : null,
       },
       { status: 201 }
     );

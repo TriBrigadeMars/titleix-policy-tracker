@@ -12,6 +12,8 @@ export interface RawInstrument {
   identifier: string;
   title: string;
   status: Instrument["status"];
+  source?: string | null;
+  sourceId?: string | null;
   introducedAt: string | null;
   passedAt: string | null;
   effectiveAt: string | null;
@@ -37,15 +39,102 @@ export interface IngestResult {
   skipped: number;
 }
 
+/** Upstream fetch calls are capped so a hung API cannot stall an ingest. */
+export const FETCH_TIMEOUT_MS = 10_000;
+
+export function parseSafeDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Rows per `$transaction`. A single unbounded transaction over a whole master
+ * list (LegiScan returns tens of thousands of rows) can exceed statement and
+ * lock timeouts, so upserts are batched.
+ */
+export const INGEST_CHUNK_SIZE = 50;
+
+export function chunk<T>(items: T[], size = INGEST_CHUNK_SIZE): T[][] {
+  if (size <= 0) throw new Error("chunk size must be positive");
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
+function upsertOperation(
+  row: RawInstrument & { jurisdictionId: string },
+  now: Date
+) {
+  const introducedAt = parseSafeDate(row.introducedAt);
+  const passedAt = parseSafeDate(row.passedAt);
+  const effectiveAt = parseSafeDate(row.effectiveAt);
+
+  const updateData: Record<string, unknown> = {
+    title: row.title,
+    sourceUrl: row.sourceUrl,
+    rawSummary: row.rawSummary,
+    lastCheckedAt: now,
+  };
+
+  if (row.source !== undefined) updateData.source = row.source;
+  if (row.sourceId !== undefined) updateData.sourceId = row.sourceId;
+  if (introducedAt) updateData.introducedAt = introducedAt;
+  if (passedAt) updateData.passedAt = passedAt;
+  if (effectiveAt) updateData.effectiveAt = effectiveAt;
+
+  return prisma.instrument.upsert({
+    where: {
+      jurisdictionId_type_identifier: {
+        jurisdictionId: row.jurisdictionId,
+        type: row.type,
+        identifier: row.identifier,
+      },
+    },
+    create: {
+      jurisdictionId: row.jurisdictionId,
+      type: row.type,
+      identifier: row.identifier,
+      title: row.title,
+      status: row.status,
+      triageStatus: "UNREVIEWED",
+      source: row.source ?? null,
+      sourceId: row.sourceId ?? null,
+      isTitleIXRelevant: false,
+      introducedAt,
+      passedAt,
+      effectiveAt,
+      sourceUrl: row.sourceUrl,
+      rawSummary: row.rawSummary,
+      lastCheckedAt: now,
+    },
+    update: updateData,
+  });
+}
+
 /**
  * Upsert raw instruments, resolving jurisdiction codes to ids and keying on the
  * unique `(jurisdictionId, type, identifier)`.
  *
- * Machine-owned fields (title, status, dates, sourceUrl, rawSummary,
- * lastCheckedAt) are overwritten on update. Editor-owned fields
- * (isTitleIXRelevant, relevanceConfidence) are never touched — that is human
- * triage, not ingest. Rows whose jurisdiction code is not in the database are
- * skipped and counted.
+ * Machine-owned fields (title, dates when valid, sourceUrl, rawSummary,
+ * lastCheckedAt) are updated on re-ingest. Status is NOT overwritten on update
+ * so editor and lifecycle corrections are preserved. Editor-owned triage fields
+ * (triageStatus, isTitleIXRelevant, relevanceConfidence) are never touched on
+ * update. Rows whose jurisdiction code is not in the database are skipped.
+ *
+ * Writes are batched into {@link INGEST_CHUNK_SIZE}-row `$transaction`s, and
+ * each chunk commits on its own. A chunk that throws leaves earlier chunks
+ * committed and the error is rethrown (never swallowed) so callers still fail
+ * loudly. That is safe because the write is idempotent — it keys on
+ * `(jurisdictionId, type, identifier)` and the update path only rewrites
+ * machine-owned fields — so retrying the same ingest converges instead of
+ * duplicating rows.
+ *
+ * Rows are resolved and mapped one chunk at a time rather than as one array of
+ * every pending operation, so a full-session ingest (LegiScan returns tens of
+ * thousands of rows) does not hold several copies of the whole batch in memory.
  */
 export async function upsertInstruments(
   rows: RawInstrument[]
@@ -61,56 +150,25 @@ export async function upsertInstruments(
   });
   const codeToId = new Map(jurisdictions.map((j) => [j.code, j.id]));
 
-  // Attach the resolved jurisdiction id; drop rows whose code is unknown.
-  const resolved = rows.flatMap((row) => {
-    const jurisdictionId = codeToId.get(row.jurisdictionCode);
-    if (!jurisdictionId) return [];
-    return [{ ...row, jurisdictionId }];
-  });
-
   const now = new Date();
+  let upserted = 0;
 
-  await prisma.$transaction(
-    resolved.map((row) =>
-      prisma.instrument.upsert({
-        where: {
-          jurisdictionId_type_identifier: {
-            jurisdictionId: row.jurisdictionId,
-            type: row.type,
-            identifier: row.identifier,
-          },
-        },
-        create: {
-          jurisdictionId: row.jurisdictionId,
-          type: row.type,
-          identifier: row.identifier,
-          title: row.title,
-          status: row.status,
-          introducedAt: row.introducedAt ? new Date(row.introducedAt) : null,
-          passedAt: row.passedAt ? new Date(row.passedAt) : null,
-          effectiveAt: row.effectiveAt ? new Date(row.effectiveAt) : null,
-          sourceUrl: row.sourceUrl,
-          rawSummary: row.rawSummary,
-          lastCheckedAt: now,
-          isTitleIXRelevant: false,
-        },
-        update: {
-          title: row.title,
-          status: row.status,
-          introducedAt: row.introducedAt ? new Date(row.introducedAt) : null,
-          passedAt: row.passedAt ? new Date(row.passedAt) : null,
-          effectiveAt: row.effectiveAt ? new Date(row.effectiveAt) : null,
-          sourceUrl: row.sourceUrl,
-          rawSummary: row.rawSummary,
-          lastCheckedAt: now,
-        },
-      })
-    )
-  );
+  for (const batch of chunk(rows)) {
+    // Resolve jurisdiction ids per chunk; drop rows whose code is unknown.
+    const operations = batch.flatMap((row) => {
+      const jurisdictionId = codeToId.get(row.jurisdictionCode);
+      if (!jurisdictionId) return [];
+      upserted += 1;
+      return [upsertOperation({ ...row, jurisdictionId }, now)];
+    });
+
+    if (operations.length === 0) continue;
+    await prisma.$transaction(operations);
+  }
 
   return {
     total: rows.length,
-    upserted: resolved.length,
-    skipped: rows.length - resolved.length,
+    upserted,
+    skipped: rows.length - upserted,
   };
 }

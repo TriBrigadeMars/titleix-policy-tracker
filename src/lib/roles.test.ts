@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_ROLES,
+  canEditRole,
   DEFAULT_ROLE,
   hasRole,
   isUserRole,
@@ -62,5 +63,29 @@ describe("role constants", () => {
 
   it("lists roles in ascending privilege order", () => {
     expect([...ALL_ROLES]).toEqual(["READER", "EDITOR", "ADMIN"]);
+  });
+});
+
+describe("canEditRole", () => {
+  it("is false for anonymous visitors without inventing a role", () => {
+    expect(canEditRole(null)).toBe(false);
+    expect(canEditRole(undefined)).toBe(false);
+    expect(canEditRole({})).toBe(false);
+    expect(canEditRole({ user: null })).toBe(false);
+  });
+
+  it("is false below EDITOR", () => {
+    expect(canEditRole({ user: { role: "READER" } })).toBe(false);
+  });
+
+  it("is true at EDITOR and above", () => {
+    expect(canEditRole({ user: { role: "EDITOR" } })).toBe(true);
+    expect(canEditRole({ user: { role: "ADMIN" } })).toBe(true);
+  });
+
+  it("fails closed for a missing or unknown role", () => {
+    expect(canEditRole({ user: {} })).toBe(false);
+    expect(canEditRole({ user: { role: "SUPERADMIN" } })).toBe(false);
+    expect(canEditRole({ user: { role: null } })).toBe(false);
   });
 });

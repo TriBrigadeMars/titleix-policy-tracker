@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mapCongressBills } from "./congress";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { congressAdapter, mapCongressBills } from "./congress";
 
 const completeBill = {
   congress: 110,
@@ -28,12 +28,15 @@ describe("mapCongressBills", () => {
         jurisdictionCode: "US",
         type: "BILL",
         identifier: "HCONRES-10-110",
+        source: "congress",
+        sourceId: "HCONRES-10-110",
         title: "Expressing the sense of the Congress that ...",
         status: "PROPOSED",
         introducedAt: "2007-01-04",
         passedAt: null,
         effectiveAt: null,
-        sourceUrl: "https://www.congress.gov/bill/110th-congress/HCONRES/10",
+        sourceUrl:
+          "https://www.congress.gov/bill/110th-congress/house-concurrent-resolution/10",
         rawSummary: "Sponsor introductory remarks on measure. (CR H4200)",
       },
     ]);
@@ -115,13 +118,89 @@ describe("mapCongressBills", () => {
       jurisdictionCode: "US",
       type: "BILL",
       identifier: "HR-1234-119",
+      source: "congress",
+      sourceId: "HR-1234-119",
       title: "A later bill",
       status: "PROPOSED",
       introducedAt: null,
       passedAt: null,
       effectiveAt: null,
-      sourceUrl: "https://www.congress.gov/bill/119th-congress/HR/1234",
+      sourceUrl: "https://www.congress.gov/bill/119th-congress/house-bill/1234",
       rawSummary: null,
     });
+  });
+
+  it("maps all Congress bill types to their proper congress.gov URL slugs", () => {
+    const typesToSlugs: Record<string, string> = {
+      HR: "house-bill",
+      S: "senate-bill",
+      HJRES: "house-joint-resolution",
+      SJRES: "senate-joint-resolution",
+      HCONRES: "house-concurrent-resolution",
+      SCONRES: "senate-concurrent-resolution",
+      HRES: "house-resolution",
+      SRES: "senate-resolution",
+    };
+
+    for (const [type, slug] of Object.entries(typesToSlugs)) {
+      const bill = { ...completeBill, type, congress: 119, number: "42" };
+      const [mapped] = mapCongressBills(response(bill));
+      expect(mapped.sourceUrl).toBe(
+        `https://www.congress.gov/bill/119th-congress/${slug}/42`
+      );
+    }
+  });
+});
+
+describe("congressAdapter.fetch", () => {
+  const originalKey = process.env.CONGRESS_GOV_API_KEY;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalKey === undefined) {
+      delete process.env.CONGRESS_GOV_API_KEY;
+    } else {
+      process.env.CONGRESS_GOV_API_KEY = originalKey;
+    }
+  });
+
+  it("fails closed when CONGRESS_GOV_API_KEY is missing", async () => {
+    delete process.env.CONGRESS_GOV_API_KEY;
+
+    await expect(congressAdapter.fetch({})).rejects.toThrow(
+      /CONGRESS_GOV_API_KEY is not set/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requests with a timeout AbortSignal", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(completeBill),
+    });
+
+    const rows = await congressAdapter.fetch({ congress: 119, limit: 20 });
+
+    expect(rows).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("congress=119");
+    expect(url).toContain("limit=20");
+    expect(url).toContain("api_key=test-key");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("throws on a non-ok response", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+
+    await expect(congressAdapter.fetch({})).rejects.toThrow(/status 503/);
   });
 });
