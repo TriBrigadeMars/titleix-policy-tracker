@@ -98,9 +98,9 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 |-----|--------|
 | Public heatmap vs signed-in compare | The heatmap and comparison matrix are now anonymously readable at `/heatmap` and `/`; triage, cell-note writes, and admin remain signed-in only. |
 | Extra instrument types | `GUIDANCE`, `EXECUTIVE_ORDER`, `COURT_ORDER` need an explicit migration when needed. |
-| Integration test breadth | Only the ingest upsert path is DB-backed. Auth guards, cell-note writes, and the triage `PATCH` still rely on mocked Prisma. |
+| Integration test breadth | Ingest, cell-note writes, and the triage `PATCH` are DB-backed. Auth guards still rely on mocked Prisma. |
 | Public anonymous view | Read-only matrix + heatmap are public; the pages carry a signed-out note pointing at `/sign-in`, and editor chrome stays off without a session. |
-| Write-path integration tests | Still thin beyond ingest: cell-note and triage writes have route unit tests with mocked Prisma only. |
+| Write-path integration tests | Covered by `*.integration.test.ts` alongside the route unit tests: cell-note `PUT`/`DELETE` and instrument triage `PATCH`, including that a re-ingest does not clobber editor triage or lifecycle status. These skip unless `TEST_DATABASE_URL` is set (CI sets it); auth guards are still mocked-Prisma only. |
 
 Phase 4 (the current change) is **docs + dedup only** — it extracts
 `INGEST_GENERIC_ERROR` / `paramInt` into `src/lib/ingest/route-helpers.ts` and
@@ -224,6 +224,8 @@ Triage, cell-note writes, ingest, and admin stay behind `src/lib/auth-guards.ts`
 1. Public heatmap/matrix view for anonymous users â€” **done**: both pages render
    signed out with a read-only note; editor chrome requires a session.
 2. Extend DB-backed integration tests to the write paths (cell notes, triage
-   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place.
+   `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place. â€” **done**:
+   both write paths have `*.integration.test.ts` coverage, including re-ingest
+   preserving editor triage.
 
 See `docs/ORCHESTRATOR.md` for how to run that work.
