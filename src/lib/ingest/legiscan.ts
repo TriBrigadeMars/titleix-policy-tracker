@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   FETCH_TIMEOUT_MS,
   INGEST_CHUNK_SIZE,
@@ -21,18 +22,30 @@ export interface LegiScanMapOptions {
   limit?: number;
 }
 
-interface LegiScanMasterListItem {
-  bill_id: number;
-  number: string;
-  status: number | string;
-  status_date: string;
-  last_action: string;
-  last_action_date: string;
-  title: string;
-  description: string;
-  url: string;
-  state?: string;
-}
+/**
+ * Boundary schema for a `getMasterList` entry. Only the fields that establish
+ * identity (`bill_id`, `number`) or lifecycle state (`status`) are required;
+ * descriptive fields stay optional so a sparse upstream row is still usable.
+ *
+ * `bill_id` is the source identity, so it must be a real positive integer —
+ * without this check `String(value.bill_id)` can produce the literal
+ * `"undefined"` and collide on the `(source, sourceId)` unique constraint.
+ */
+const LegiScanMasterListItemSchema = z.object({
+  bill_id: z.number().int().positive(),
+  number: z.string().min(1),
+  status: z.union([z.number(), z.string()]),
+  status_date: z.string().optional(),
+  last_action: z.string().optional(),
+  last_action_date: z.string().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  url: z.string().optional(),
+  state: z.string().optional(),
+});
+
+/** Derived from the schema so the two can never drift apart. */
+type LegiScanMasterListItem = z.infer<typeof LegiScanMasterListItemSchema>;
 
 interface LegiScanSession {
   session_id: number;
@@ -46,10 +59,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Skip the special `"session"` key LegiScan nests inside `masterlist`. */
-function isMasterListItem(value: unknown): value is LegiScanMasterListItem {
-  if (!isRecord(value)) return false;
-  return typeof value.number === "string";
+/**
+ * Parse one `masterlist` entry, skipping the special `"session"` key LegiScan
+ * nests inside `masterlist` and any row that fails boundary validation.
+ */
+function parseMasterListItem(value: unknown): LegiScanMasterListItem | null {
+  const parsed = LegiScanMasterListItemSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function legiScanState(item: LegiScanMasterListItem): string | null {
@@ -66,11 +82,7 @@ function toRawInstrument(
   sessionTag: string | null
 ): RawInstrument {
   const statusValue = value.status;
-  const statusDate =
-    typeof value.status_date === "string" ? value.status_date : null;
-  const lastActionDate =
-    typeof value.last_action_date === "string" ? value.last_action_date : null;
-  const availableDate = statusDate ?? lastActionDate;
+  const statusDate = value.status_date ?? null;
   const isIntroduced = legiscanIsIntroduced(statusValue);
   const isPassed = legiscanIsPassed(statusValue);
 
@@ -82,18 +94,16 @@ function toRawInstrument(
     identifier: `${state}${sessionTag ? `-${sessionTag}` : ""}-${value.number}`,
     source: "legiscan",
     sourceId: String(value.bill_id),
-    title: typeof value.title === "string" ? value.title : "",
+    title: value.title ?? "",
     status: legiscanStatusToInstrumentStatus(statusValue),
-    introducedAt: isIntroduced ? statusDate : availableDate,
+    // Only a genuine introduction status carries an introduction date. Falling
+    // back to a later action date would present a passage date as the date the
+    // bill was introduced.
+    introducedAt: isIntroduced ? statusDate : null,
     passedAt: isPassed ? statusDate : null,
     effectiveAt: null,
-    sourceUrl: typeof value.url === "string" ? value.url : null,
-    rawSummary:
-      typeof value.last_action === "string"
-        ? value.last_action
-        : typeof value.description === "string"
-          ? value.description
-          : null,
+    sourceUrl: value.url ?? null,
+    rawSummary: value.last_action ?? value.description ?? null,
   };
 }
 
@@ -131,11 +141,12 @@ export function* mapLegiScanMasterListBatches(
   let mapped = 0;
   for (const [key, value] of Object.entries(masterlist)) {
     if (key === "session") continue;
-    if (!isMasterListItem(value)) continue;
-    const state = legiScanState(value) ?? fallbackState;
+    const item = parseMasterListItem(value);
+    if (!item) continue;
+    const state = legiScanState(item) ?? fallbackState;
     if (!state) continue;
 
-    batch.push(toRawInstrument(value, state, sessionTag));
+    batch.push(toRawInstrument(item, state, sessionTag));
     mapped += 1;
     if (batch.length >= INGEST_CHUNK_SIZE) {
       yield batch;
@@ -151,10 +162,11 @@ export function* mapLegiScanMasterListBatches(
  * I/O, no database.
  *
  * The `masterlist` object is keyed numerically ("0", "1", …) plus a special
- * `"session"` key describing the session itself. Numeric entries are mapped;
- * anything without a numeric `bill_id` is skipped. When `state` is omitted
- * from `opts`, bills without a two-letter `state` field are skipped because
- * their jurisdiction code cannot be derived.
+ * `"session"` key describing the session itself. Numeric entries are validated
+ * against {@link LegiScanMasterListItemSchema} and mapped; anything without a
+ * positive integer `bill_id` is skipped. When `state` is omitted from `opts`,
+ * bills without a two-letter `state` field are skipped because their
+ * jurisdiction code cannot be derived.
  */
 export function mapLegiScanMasterList(
   json: unknown,

@@ -74,6 +74,9 @@ function upsertOperation(
 
   const updateData: Record<string, unknown> = {
     title: row.title,
+    // Source-owned lifecycle status: refreshed on every re-ingest so a bill
+    // that moved from PROPOSED to PASSED upstream is not frozen locally.
+    status: row.status,
     sourceUrl: row.sourceUrl,
     rawSummary: row.rawSummary,
     lastCheckedAt: now,
@@ -81,6 +84,9 @@ function upsertOperation(
 
   if (row.source !== undefined) updateData.source = row.source;
   if (row.sourceId !== undefined) updateData.sourceId = row.sourceId;
+  // Dates are source-owned and `null` means "the source did not report this
+  // date", not "clear it". A reported date always overwrites; an absent one
+  // leaves the previously known value intact.
   if (introducedAt) updateData.introducedAt = introducedAt;
   if (passedAt) updateData.passedAt = passedAt;
   if (effectiveAt) updateData.effectiveAt = effectiveAt;
@@ -102,7 +108,6 @@ function upsertOperation(
       triageStatus: "UNREVIEWED",
       source: row.source ?? null,
       sourceId: row.sourceId ?? null,
-      isTitleIXRelevant: false,
       introducedAt,
       passedAt,
       effectiveAt,
@@ -118,18 +123,21 @@ function upsertOperation(
  * Upsert raw instruments, resolving jurisdiction codes to ids and keying on the
  * unique `(jurisdictionId, type, identifier)`.
  *
- * Machine-owned fields (title, dates when valid, sourceUrl, rawSummary,
- * lastCheckedAt) are updated on re-ingest. Status is NOT overwritten on update
- * so editor and lifecycle corrections are preserved. Editor-owned triage fields
- * (triageStatus, isTitleIXRelevant, relevanceConfidence) are never touched on
- * update. Rows whose jurisdiction code is not in the database are skipped.
+ * Machine-owned fields (title, status, dates when the source reports them,
+ * sourceUrl, rawSummary, lastCheckedAt) are updated on re-ingest. Ingestion
+ * owns `status`: it is the source-of-record lifecycle state and is refreshed
+ * every time, so a bill that advanced upstream is not frozen locally. There is
+ * no editorial status override in the product, so no override layer is needed.
+ * Editor-owned triage fields (triageStatus, relevanceConfidence) are never
+ * touched on update. Rows whose jurisdiction code is not in the database are
+ * skipped.
  *
  * Writes are batched into {@link INGEST_CHUNK_SIZE}-row `$transaction`s, and
  * each chunk commits on its own. A chunk that throws leaves earlier chunks
  * committed and the error is rethrown (never swallowed) so callers still fail
  * loudly. That is safe because the write is idempotent — it keys on
  * `(jurisdictionId, type, identifier)` and the update path only rewrites
- * machine-owned fields — so retrying the same ingest converges instead of
+ * source-owned fields — so retrying the same ingest converges instead of
  * duplicating rows.
  *
  * Rows are resolved and mapped one chunk at a time rather than as one array of

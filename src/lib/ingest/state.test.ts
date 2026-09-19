@@ -51,9 +51,9 @@ describe("legiscanStatusToInstrumentStatus", () => {
     expect(legiscanStatusToInstrumentStatus(8)).toBe("EFFECTIVE");
   });
 
-  it("maps vetoed/failed to REPEALED", () => {
-    expect(legiscanStatusToInstrumentStatus(5)).toBe("REPEALED");
-    expect(legiscanStatusToInstrumentStatus(6)).toBe("REPEALED");
+  it("maps vetoed/failed to their own lifecycle states, never REPEALED", () => {
+      expect(legiscanStatusToInstrumentStatus(5)).toBe("VETOED");
+      expect(legiscanStatusToInstrumentStatus(6)).toBe("FAILED");
   });
 
   it("falls back to PROPOSED for everything else, including non-numeric", () => {

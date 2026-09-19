@@ -36,16 +36,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const {
-    triageStatus: inputStatus,
-    isTitleIXRelevant,
-    relevanceConfidence,
-    issueTagIds,
-  } = parsed.data;
-
-  const resolvedTriageStatus: "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT" =
-    inputStatus ?? (isTitleIXRelevant ? "RELEVANT" : "NOT_RELEVANT");
-  const resolvedIsRelevant = resolvedTriageStatus === "RELEVANT";
+  const { triageStatus, relevanceConfidence, issueTagIds } = parsed.data;
 
   // Deduplicate issue tag IDs before syncing
   const uniqueIssueTagIds = [...new Set(issueTagIds)];
@@ -75,12 +66,11 @@ export async function PATCH(request: Request, context: RouteContext) {
         });
       }
 
-      // Update triage status, relevance and confidence
+      // Update triage status and confidence
       return tx.instrument.update({
         where: { id },
         data: {
-          triageStatus: resolvedTriageStatus,
-          isTitleIXRelevant: resolvedIsRelevant,
+          triageStatus,
           relevanceConfidence: relevanceConfidence ?? null,
         },
         include: instrumentWithNotesInclude,

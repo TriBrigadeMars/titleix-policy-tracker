@@ -34,9 +34,7 @@ export function InstrumentTriageEditor({
   onSaved,
 }: InstrumentTriageEditorProps) {
   const [currentTriageStatus, setCurrentTriageStatus] = useState<TriageStatus>(
-    () =>
-      instrument.triageStatus ??
-      (instrument.isTitleIXRelevant ? "RELEVANT" : "UNREVIEWED")
+    () => instrument.triageStatus
   );
   const [confidence, setConfidence] = useState<number | "">(
     instrument.relevanceConfidence ?? ""
@@ -64,7 +62,6 @@ export function InstrumentTriageEditor({
     (nextNotes: InstrumentNote[]): Instrument => ({
       ...instrument,
       triageStatus: currentTriageStatus,
-      isTitleIXRelevant: currentTriageStatus === "RELEVANT",
       relevanceConfidence: confidence === "" ? null : Number(confidence),
       issueTags: issueTags
         .filter((tag) => selectedTags.has(tag.id))
@@ -96,7 +93,6 @@ export function InstrumentTriageEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           triageStatus: currentTriageStatus,
-          isTitleIXRelevant: currentTriageStatus === "RELEVANT",
           relevanceConfidence,
           issueTagIds: Array.from(selectedTags),
         }),

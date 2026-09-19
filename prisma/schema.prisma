@@ -130,8 +130,7 @@ model Instrument {
   sourceUrl         String?          @map("source_url")
   rawSummary        String?          @map("raw_summary") // from API, unverified
   lastCheckedAt     DateTime?        @map("last_checked_at")
-  isTitleIXRelevant Boolean          @default(false) @map("is_title_ix_relevant")
-  relevanceConfidence Int?           @map("relevance_confidence") // 0-100
+    relevanceConfidence Int?           @map("relevance_confidence") // 0-100
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
@@ -143,8 +142,7 @@ model Instrument {
   @@unique([source, sourceId])
   @@index([jurisdictionId, status])
   @@index([triageStatus, status])
-  @@index([isTitleIXRelevant, status])
-  @@index([type])
+    @@index([type])
   @@index([lastCheckedAt])
   @@map("instruments")
 }
@@ -173,6 +171,8 @@ enum InstrumentStatus {
   PASSED
   EFFECTIVE
   ENJOINED
+  FAILED
+  VETOED
   REPEALED
 
   @@map("instrument_status")

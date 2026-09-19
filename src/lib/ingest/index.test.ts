@@ -86,23 +86,28 @@ describe("upsertInstruments", () => {
     });
   });
 
-  it("overwrites machine fields on update but never editor fields or status", async () => {
+  it("overwrites source-owned fields on update but never editor fields", async () => {
     await upsertInstruments([usRow]);
     const call = upsert.mock.calls[0][0];
-    expect(call.update).not.toHaveProperty("isTitleIXRelevant");
+      expect(call.update).not.toHaveProperty("triageStatus");
     expect(call.update).not.toHaveProperty("relevanceConfidence");
-    expect(call.update).not.toHaveProperty("status");
+      expect(call.update).toHaveProperty("status", "PROPOSED");
     expect(call.update).toHaveProperty("title", "A bill");
     expect(call.update).toHaveProperty("lastCheckedAt");
   });
 
-  it("defaults isTitleIXRelevant to false on create and omits confidence", async () => {
-    await upsertInstruments([usRow]);
+    it("refreshes lifecycle status when the source reports a new one", async () => {
+      await upsertInstruments([{ ...usRow, status: "PASSED" }]);
     const call = upsert.mock.calls[0][0];
-    expect(call.create.isTitleIXRelevant).toBe(false);
-    expect(call.create.triageStatus).toBe("UNREVIEWED");
-    expect(call.create).not.toHaveProperty("relevanceConfidence");
-  });
+      expect(call.update).toHaveProperty("status", "PASSED");
+    });
+
+    it("defaults triage to UNREVIEWED on create and omits confidence", async () => {
+      await upsertInstruments([usRow]);
+      const call = upsert.mock.calls[0][0];
+      expect(call.create.triageStatus).toBe("UNREVIEWED");
+      expect(call.create).not.toHaveProperty("relevanceConfidence");
+    });
 
   it("skips rows whose jurisdiction code is not in the database", async () => {
     const unknownRow: RawInstrument = { ...usRow, jurisdictionCode: "ZZ" };

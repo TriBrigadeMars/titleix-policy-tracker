@@ -13,19 +13,13 @@ import type { Prisma, TriageStatus as PrismaTriageStatus } from "@prisma/client"
 export type TriageStatus = "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT";
 
 export function triageStatus(
-  statusOrRelevant: PrismaTriageStatus | string | boolean,
-  confidence?: number | null
+  status: PrismaTriageStatus | string
 ): TriageStatus {
-  if (typeof statusOrRelevant === "string") {
-    const upper = statusOrRelevant.toUpperCase();
+  if (typeof status === "string") {
+    const upper = status.toUpperCase();
     if (upper === "RELEVANT") return "RELEVANT";
     if (upper === "NOT_RELEVANT") return "NOT_RELEVANT";
     if (upper === "UNREVIEWED") return "UNREVIEWED";
-  }
-  if (typeof statusOrRelevant === "boolean") {
-    if (statusOrRelevant) return "RELEVANT";
-    if (confidence !== null && confidence !== undefined) return "NOT_RELEVANT";
-    return "UNREVIEWED";
   }
   return "UNREVIEWED";
 }

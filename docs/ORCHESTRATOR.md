@@ -53,7 +53,7 @@ Non-negotiable implementation rules:
 - List endpoints never dump a table. They take a bounded filter.
 - Mutations use requireRole, session-owned actor ids, and z.strictObject.
 - Instrument ingest upserts on (jurisdictionId, type, identifier).
-- Only editors set isTitleIXRelevant and write notes. Machines ingest raw rows.
+- Only editors set triageStatus and write notes. Machines ingest raw rows.
 - InstrumentType stays a Prisma enum. New types need a migration.
 - Middleware does not call auth(). Layout and auth-guards remain the gates.
 - After any auth-related PR, run a security-review pass.
