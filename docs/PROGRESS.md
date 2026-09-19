@@ -2,7 +2,7 @@
 
 Title IX Policy Tracker is a signed-in Next.js 15 app (App Router, Prisma/Postgres, Auth.js Google OAuth, Tailwind/shadcn) for comparing state and federal law that can affect Title IX.
 
-Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, **50-state heatmap**, and **admin user-role management** slices are real and structurally sound. Public view is not.
+Honest status: the **read/compare + cell-note write**, **Congress.gov ingest**, **editor triage**, **50-state heatmap**, and **admin user-role management** slices are real and structurally sound. Public read of the comparison matrix and heatmap is real too; everything that writes is still signed-in.
 
 Merged through [PR #15](https://github.com/TriBrigadeMars/titleix-policy-tracker/pull/15) on `main`.
 
@@ -96,16 +96,22 @@ A post-merge review of the triage, heatmap, and admin slices fixed eight finding
 
 | Gap | Notes |
 |-----|--------|
-| Public heatmap vs signed-in compare | Product is sign-in-to-read. Architecture still mentions public users. |
+| Public heatmap vs signed-in compare | The heatmap and comparison matrix are now anonymously readable at `/heatmap` and `/`; triage, cell-note writes, and admin remain signed-in only. |
 | Extra instrument types | `GUIDANCE`, `EXECUTIVE_ORDER`, `COURT_ORDER` need an explicit migration when needed. |
 | Integration test breadth | Only the ingest upsert path is DB-backed. Auth guards, cell-note writes, and the triage `PATCH` still rely on mocked Prisma. |
-| Public anonymous view | Not built. Every read path is behind the protected layout. |
+| Public anonymous view | Read-only matrix + heatmap are public; the pages carry a signed-out note pointing at `/sign-in`, and editor chrome stays off without a session. |
 | Write-path integration tests | Still thin beyond ingest: cell-note and triage writes have route unit tests with mocked Prisma only. |
 
 Phase 4 (the current change) is **docs + dedup only** — it extracts
 `INGEST_GENERIC_ERROR` / `paramInt` into `src/lib/ingest/route-helpers.ts` and
 corrects this documentation. It does not build the public view, add instrument
 types, or widen integration-test coverage.
+
+The public view slice sits on top of it: `/` and `/heatmap` render for anonymous
+visitors, each with a short signed-out note linking to `/sign-in`. Editing is
+decided by `canEditRole(session)` in `src/lib/roles.ts`, which is `true` only for
+a signed-in `EDITOR`/`ADMIN`; anonymous visitors are given no synthetic role.
+Triage, cell-note writes, ingest, and admin stay behind `src/lib/auth-guards.ts`.
 
 ## Canonical files (do not fork)
 
@@ -215,7 +221,8 @@ types, or widen integration-test coverage.
 
 ## Suggested next slice
 
-1. Public heatmap/matrix view for anonymous users.
+1. Public heatmap/matrix view for anonymous users â€” **done**: both pages render
+   signed out with a read-only note; editor chrome requires a session.
 2. Extend DB-backed integration tests to the write paths (cell notes, triage
    `PATCH`) using the `TEST_DATABASE_URL` gate that is now in place.
 

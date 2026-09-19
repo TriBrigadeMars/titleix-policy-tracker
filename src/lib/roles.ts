@@ -26,3 +26,23 @@ export function hasRole(actual: UserRole, required: UserRole): boolean {
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && ALL_ROLES.includes(value as UserRole);
 }
+
+/** The slice of a session needed to decide whether the viewer may edit. */
+export interface SessionRoleSource {
+  user?: { role?: unknown } | null;
+}
+
+/**
+ * True only when there is a signed-in user holding at least `EDITOR`.
+ *
+ * Anonymous visitors are explicitly `false` here rather than being assigned
+ * `DEFAULT_ROLE` and re-checked, which reads as if a role had been granted.
+ * Display-only: every write is authorized by `src/lib/auth-guards.ts`.
+ */
+export function canEditRole(
+  session: SessionRoleSource | null | undefined
+): boolean {
+  const user = session?.user;
+  if (!user) return false;
+  return isUserRole(user.role) && hasRole(user.role, "EDITOR");
+}

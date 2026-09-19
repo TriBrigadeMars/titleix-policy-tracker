@@ -7,6 +7,11 @@ import { defineConfig } from "vitest/config";
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
 export default defineConfig({
+  // tsconfig sets `jsx: "preserve"` for Next, which leaves raw JSX in files
+  // imported by tests. The transform has to compile it for those imports.
+  oxc: {
+    jsx: { runtime: "automatic" },
+  },
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],

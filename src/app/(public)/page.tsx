@@ -1,12 +1,13 @@
 import { auth } from "@/lib/auth";
 import { Dashboard } from "@/components/dashboard";
+import { PublicReadOnlyNote } from "@/components/public-readonly-note";
 import {
   getCellNotesForComparison,
   getInstrumentsForComparison,
   getIssueTags,
   getJurisdictions,
 } from "@/lib/queries";
-import { DEFAULT_ROLE, hasRole } from "@/lib/roles";
+import { canEditRole } from "@/lib/roles";
 import {
   MAX_COMPARISON_JURISDICTIONS,
   parseIdList,
@@ -20,7 +21,7 @@ export default async function Home({
   searchParams: Promise<{ j?: string | string[] }>;
 }) {
   const session = await auth();
-  const role = session?.user?.role ?? DEFAULT_ROLE;
+  const canEdit = canEditRole(session);
   const params = await searchParams;
   const raw = Array.isArray(params.j) ? params.j.join(",") : (params.j ?? null);
   const requestedCodes = parseIdList(raw).slice(
@@ -47,13 +48,16 @@ export default async function Home({
     : [[], [], []];
 
   return (
-    <Dashboard
-      canEdit={hasRole(role, "EDITOR")}
-      jurisdictions={jurisdictions}
-      selectedCodes={selected.map((j) => j.code)}
-      issueTags={issueTags}
-      instruments={instruments}
-      cellNotes={cellNotes}
-    />
+    <>
+      {!session?.user && <PublicReadOnlyNote />}
+      <Dashboard
+        canEdit={canEdit}
+        jurisdictions={jurisdictions}
+        selectedCodes={selected.map((j) => j.code)}
+        issueTags={issueTags}
+        instruments={instruments}
+        cellNotes={cellNotes}
+      />
+    </>
   );
 }
