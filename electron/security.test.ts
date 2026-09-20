@@ -37,6 +37,8 @@ describe("classifyUrl", () => {
       ["https://congress.gov/bill/...", false],
       ["https://legiscan.com/...", false],
       ["https://accounts.google.com/o/oauth2/v2/auth?...", false],
+      ["https://evil.example.org", false],
+      ["https://evil.example.org", true],
     ])("returns OPEN_EXTERNAL for %s (authActive=%s)", (url, authActive) => {
       const result = classifyUrl(url, appOrigin, authOrigins, authActive);
       expect(result).toEqual({ kind: "OPEN_EXTERNAL" });
@@ -51,8 +53,6 @@ describe("classifyUrl", () => {
       ["file:///C:/Windows/System32", true],
       ["http://titleix.example.org", false],
       ["http://localhost:3000", false],
-      ["https://evil.example.org", false],
-      ["https://evil.example.org", true],
       ["", false],
       ["", true],
       ["/relative/path", false],

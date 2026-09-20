@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen } from "electron";
+import { app, BrowserWindow, screen, shell } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -9,6 +9,8 @@ import {
   DESKTOP_MIN_HEIGHT,
   DESKTOP_MIN_WIDTH,
   resolveAppUrl,
+  urlOrigin,
+  authAllowlistOrigins,
 } from "./constants";
 import {
   isBoundsVisibleOnAnyDisplay,
@@ -16,6 +18,11 @@ import {
   resolveInitialBounds,
   type WindowBounds,
 } from "./window-state";
+import {
+  classifyUrl,
+  createAuthFlowGuard,
+  isSafeExternalUrl,
+} from "./security";
 
 // WP-09: single-instance lock
 
@@ -110,6 +117,78 @@ function createMainWindow(): void {
   });
 
   // WP-07: navigation lockdown
+  const appOrigin = urlOrigin(resolveAppUrl(app.isPackaged));
+  if (appOrigin === null) {
+    console.error("Fatal: app origin could not be resolved from app URL");
+  }
+  const authOrigins = authAllowlistOrigins(appOrigin ?? "");
+  const guard = createAuthFlowGuard();
+
+  // Mark the auth flow active when navigation to /sign-in begins, and
+  // inactive once the loaded URL is back on the app origin with a path
+  // other than /sign-in.
+  const isSignInPath = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      return parsed.origin === appOrigin && parsed.pathname.startsWith("/sign-in");
+    } catch {
+      return false;
+    }
+  };
+
+  win.webContents.on("will-navigate", (_event, url) => {
+    if (isSignInPath(url)) {
+      guard.begin();
+    }
+  });
+
+  win.webContents.on("did-navigate", (_event, url) => {
+    if (appOrigin !== null && url.startsWith(appOrigin) && !isSignInPath(url)) {
+      guard.end();
+    }
+  });
+
+  win.webContents.on("did-finish-load", () => {
+    const url = win.webContents.getURL();
+    if (appOrigin !== null && url.startsWith(appOrigin) && !isSignInPath(url)) {
+      guard.end();
+    }
+  });
+
+  win.webContents.on("will-navigate", (event, url) => {
+    const action = classifyUrl(url, appOrigin ?? "", authOrigins, guard.isActive());
+    if (action.kind === "ALLOW") {
+      // in-app navigation — allow
+    } else if (action.kind === "OPEN_EXTERNAL") {
+      event.preventDefault();
+      if (isSafeExternalUrl(url)) {
+        shell.openExternal(url);
+      }
+    } else {
+      // BLOCK
+      event.preventDefault();
+    }
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    const action = classifyUrl(url, appOrigin ?? "", authOrigins, guard.isActive());
+    if (action.kind === "ALLOW") {
+      return { action: "allow" };
+    }
+    if (action.kind === "OPEN_EXTERNAL") {
+      if (isSafeExternalUrl(url)) {
+        shell.openExternal(url);
+      }
+      return { action: "deny" };
+    }
+    // BLOCK or anything unclassifiable
+    return { action: "deny" };
+  });
+
+  // Defense in depth: the app doesn't use webviews; block them entirely.
+  win.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
 
   // WP-11: offline handling
 
