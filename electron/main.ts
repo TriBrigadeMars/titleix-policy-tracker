@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   Menu,
   screen,
   shell,
@@ -72,6 +73,8 @@ export function setZoom(win: BrowserWindow, factor: number): void {
 
 app.setAppUserModelId(APP_ID); // set BEFORE window creation
 
+const appOrigin = urlOrigin(resolveAppUrl(app.isPackaged));
+
 let mainWindow: BrowserWindow | null = null;
 
 /**
@@ -83,6 +86,21 @@ let mainWindow: BrowserWindow | null = null;
  */
 function buildAppMenu(): Menu {
   const template: MenuItemConstructorOptions[] = [
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "Exit",
+          accelerator: "CmdOrCtrl+Q",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              target.close();
+            }
+          },
+        },
+      ],
+    },
     {
       label: "View",
       submenu: [
@@ -140,7 +158,56 @@ function buildAppMenu(): Menu {
         },
       ],
     },
+    {
+      label: "Help",
+      submenu: [
+        {
+          label: "Open Website",
+          click: () => {
+            if (appOrigin && isSafeExternalUrl(appOrigin)) {
+              shell.openExternal(appOrigin);
+            }
+          },
+        },
+        {
+          label: "About Title IX Policy Tracker",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              dialog.showMessageBox(target, {
+                type: "info",
+                title: "About",
+                message: APP_NAME,
+                detail: [
+                  `Version: ${app.getVersion()}`,
+                  `Electron: ${process.versions.electron}`,
+                  `Chrome: ${process.versions.chrome}`,
+                ].join("\n"),
+              });
+            }
+          },
+        },
+      ],
+    },
   ];
+
+  if (!app.isPackaged) {
+    template.push({
+      label: "Developer",
+      submenu: [
+        {
+          label: "Open DevTools",
+          accelerator: "CmdOrCtrl+Shift+I",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              target.webContents.toggleDevTools();
+            }
+          },
+        },
+      ],
+    });
+  }
 
   return Menu.buildFromTemplate(template);
 }
@@ -233,7 +300,6 @@ function createMainWindow(): void {
   });
 
   // WP-07: navigation lockdown
-  const appOrigin = urlOrigin(resolveAppUrl(app.isPackaged));
   if (appOrigin === null) {
     console.error("Fatal: app origin could not be resolved from app URL");
   }
