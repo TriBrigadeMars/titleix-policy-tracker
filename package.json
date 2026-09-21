@@ -20,7 +20,7 @@
     "desktop:typecheck": "tsc --noEmit -p electron",
     "desktop:compile": "tsc -p electron",
     "desktop:copy-assets": "node -e \"require('node:fs').copyFileSync('electron/offline.html','electron-dist/offline.html')\"",
-    "desktop:dev": "echo \"Implemented in WP-13\"",
+    "desktop:dev": "concurrently -k \"npm run dev\" \"npm run desktop:compile && wait-on -t 60000 http://localhost:3000 && cross-env NODE_ENV=development electron electron-dist/main.js\"",
     "desktop:pack": "npm run desktop:compile && npm run desktop:copy-assets && electron-builder --dir",
         "desktop:dist:win": "npm run desktop:compile && npm run desktop:copy-assets && electron-builder --win --x64"
   },
