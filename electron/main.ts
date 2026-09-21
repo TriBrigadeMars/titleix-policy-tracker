@@ -1,4 +1,12 @@
-import { app, BrowserWindow, screen, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  screen,
+  shell,
+  type MenuItemConstructorOptions,
+} from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -62,6 +70,64 @@ function saveWindowState(win: BrowserWindow): void {
   }
 }
 
+function buildApplicationMenu(win: BrowserWindow, appOrigin: string): Menu {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "Exit",
+          accelerator: "CommandOrControl+Q",
+          click: () => win.close(),
+        },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [
+        {
+          label: "Open Website",
+          click: () => {
+            if (isSafeExternalUrl(appOrigin)) {
+              shell.openExternal(appOrigin);
+            }
+          },
+        },
+        {
+          type: "separator",
+        },
+        {
+          label: "About Title IX Policy Tracker",
+          click: async () => {
+            await dialog.showMessageBox(win, {
+              type: "info",
+              title: "About Title IX Policy Tracker",
+              message: APP_NAME,
+              detail: `Version ${app.getVersion()}\nElectron ${process.versions.electron}\nChromium ${process.versions.chrome}`,
+              buttons: ["OK"],
+            });
+          },
+        },
+      ],
+    },
+  ];
+
+  if (!app.isPackaged) {
+    template.push({
+      label: "Developer",
+      submenu: [
+        {
+          label: "Open DevTools",
+          accelerator: "CommandOrControl+Shift+I",
+          click: () => win.webContents.toggleDevTools(),
+        },
+      ],
+    });
+  }
+
+  return Menu.buildFromTemplate(template);
+}
+
 function createMainWindow(): void {
   // WP-10: application menu
 
@@ -121,7 +187,11 @@ function createMainWindow(): void {
   if (appOrigin === null) {
     console.error("Fatal: app origin could not be resolved from app URL");
   }
-  const authOrigins = authAllowlistOrigins(appOrigin ?? "");
+
+    // WP-10: application menu (File, Help, Developer)
+      Menu.setApplicationMenu(buildApplicationMenu(win, appOrigin ?? ""));
+
+      const authOrigins = authAllowlistOrigins(appOrigin ?? "");
   const guard = createAuthFlowGuard();
 
   // Mark the auth flow active when navigation to /sign-in begins, and
