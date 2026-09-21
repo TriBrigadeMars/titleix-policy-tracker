@@ -1,4 +1,11 @@
-import { app, BrowserWindow, screen, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  screen,
+  shell,
+  type MenuItemConstructorOptions,
+} from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -26,9 +33,117 @@ import {
 
 // WP-09: single-instance lock
 
+// WP-09B: zoom clamp range enforced by the View menu
+export const MIN_ZOOM_FACTOR = 0.5;
+export const MAX_ZOOM_FACTOR = 3.0;
+const ZOOM_STEP = 0.1;
+
+/**
+ * Step the zoom factor of a window by `delta`, clamped strictly to
+ * [MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR]. Reads the current factor so repeated
+ * accelerators accumulate exactly one step per press. Safe when the window is
+ * destroyed (no-op).
+ */
+export function adjustZoom(win: BrowserWindow, delta: number): void {
+  if (win.isDestroyed()) {
+    return;
+  }
+  const next = Math.min(
+    MAX_ZOOM_FACTOR,
+    Math.max(MIN_ZOOM_FACTOR, win.webContents.getZoomFactor() + delta),
+  );
+  win.webContents.setZoomFactor(next);
+}
+
+/**
+ * Zoom the window to the given factor, clamped strictly to the same range as
+ * zoom in/out. Safe when the window is destroyed (no-op).
+ */
+export function setZoom(win: BrowserWindow, factor: number): void {
+  if (win.isDestroyed()) {
+    return;
+  }
+  const clamped = Math.min(
+    MAX_ZOOM_FACTOR,
+    Math.max(MIN_ZOOM_FACTOR, factor),
+  );
+  win.webContents.setZoomFactor(clamped);
+}
+
 app.setAppUserModelId(APP_ID); // set BEFORE window creation
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * Build the native application menu. WP-09B adds the View submenu with zoom
+ * clamping and full-screen controls. Menu item handlers resolve the window
+ * from `mainWindow` at click time, and the template is rebuilt on
+ * `browser-window-focus` (see `app.whenReady`) so accelerators keep working
+ * after a loss/re-gain of focus (macOS drops F11 on blur).
+ */
+function buildAppMenu(): Menu {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: "View",
+      submenu: [
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              target.webContents.reload();
+            }
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Actual Size",
+          accelerator: "CmdOrCtrl+0",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              setZoom(target, 1.0);
+            }
+          },
+        },
+        {
+          label: "Zoom In",
+          accelerator: "CmdOrCtrl+Plus",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              adjustZoom(target, ZOOM_STEP);
+            }
+          },
+        },
+        {
+          label: "Zoom Out",
+          accelerator: "CmdOrCtrl+-",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              adjustZoom(target, -ZOOM_STEP);
+            }
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Toggle Full Screen",
+          accelerator: "F11",
+          click: () => {
+            const target = mainWindow;
+            if (target && !target.isDestroyed()) {
+              target.setFullScreen(!target.isFullScreen());
+            }
+          },
+        },
+      ],
+    },
+  ];
+
+  return Menu.buildFromTemplate(template);
+}
 
 function getWindowStateFilePath(): string {
   return path.join(app.getPath("userData"), "window-state.json");
@@ -63,8 +178,6 @@ function saveWindowState(win: BrowserWindow): void {
 }
 
 function createMainWindow(): void {
-  // WP-10: application menu
-
   const savedRaw = readSavedBounds();
   const displays = screen.getAllDisplays().map((d) => d.bounds);
   const initialBounds = resolveInitialBounds(savedRaw, displays);
@@ -86,6 +199,9 @@ function createMainWindow(): void {
   });
 
   mainWindow = win;
+
+  // WP-09B: native application menu (View: reload, zoom, full screen)
+  Menu.setApplicationMenu(buildAppMenu());
 
   if (initialBounds.maximized) {
     win.maximize();
@@ -245,7 +361,16 @@ function createMainWindow(): void {
   }
 }
 
-app.whenReady().then(createMainWindow);
+app.whenReady().then(() => {
+  createMainWindow();
+
+  // WP-09B: keep menu accelerators working when the window regains focus.
+  // macOS strips F11 when the app loses focus, so the menu template is
+  // rebuilt with the active window on every focus.
+  app.on("browser-window-focus", () => {
+    Menu.setApplicationMenu(buildAppMenu());
+  });
+});
 
 app.on("window-all-closed", () => {
   app.quit();
