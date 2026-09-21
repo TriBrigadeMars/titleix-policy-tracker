@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offline</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f1117;
+    color: #e1e4e8;
+    font-family: system-ui, -apple-system, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+    padding: 2rem;
+  }
+  .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: #ffffff;
+  }
+  p {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #8b949e;
+    margin-bottom: 1.5rem;
+  }
+  #retry {
+    background: #238636;
+    color: #ffffff;
+    border: none;
+    padding: 0.65rem 1.5rem;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  #retry:hover { background: #2ea043; }
+  #retry:active { background: #1a7f37; }
+  #error-detail {
+    margin-top: 1.25rem;
+    font-size: 0.8rem;
+    color: #484f58;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon">&#9888;</div>
+  <h1>Unable to Connect</h1>
+  <p>Check your internet connection and try again.</p>
+  <button id="retry">Try Again</button>
+  <div id="error-detail"></div>
+</div>
+<script>
+  var params = new URLSearchParams(window.location.search);
+  var hash = window.location.hash ? window.location.hash.substring(1) : '';
+  var hashParams = new URLSearchParams(hash);
+  var detail = params.get('detail') || hashParams.get('detail') || '';
+  var target = params.get('target') || hashParams.get('target') || 'about:blank';
+  if (detail) {
+    document.getElementById('error-detail').textContent = detail;
+  }
+  document.getElementById('retry').addEventListener('click', function () {
+    window.location.href = target;
+  });
+</script>
+</body>
+</html>
