@@ -29,6 +29,7 @@ import {
 import {
   classifyUrl,
   createAuthFlowGuard,
+  isNetworkError,
   isSafeExternalUrl,
 } from "./security";
 
@@ -76,6 +77,27 @@ app.setAppUserModelId(APP_ID); // set BEFORE window creation
 const appOrigin = urlOrigin(resolveAppUrl(app.isPackaged));
 
 let mainWindow: BrowserWindow | null = null;
+
+// WP-11: bundled offline fallback page (packaged next to main.js). The page
+// accepts `detail` and `target` parameters via query string or hash so it
+// can re-launch the original URL on retry.
+const OFFLINE_PAGE_FILE_NAME = "offline.html";
+const offlinePagePath = path.join(__dirname, OFFLINE_PAGE_FILE_NAME);
+
+/**
+ * Load the packaged offline page into `win`, passing the URL that failed
+ * and a human-readable error detail. If the offline page itself fails to
+ * load we log and do not retry — otherwise the renderer would bounce
+ * forever between the app origin and the offline page.
+ */
+export function showOfflinePage(
+  win: BrowserWindow,
+  targetUrl: string,
+  detail: string,
+): Promise<void> {
+  const params = new URLSearchParams({ detail, target: targetUrl });
+  return win.loadFile(offlinePagePath, { hash: params.toString() });
+}
 
 /**
  * Build the native application menu. WP-09B adds the View submenu with zoom
@@ -371,6 +393,35 @@ function createMainWindow(): void {
   win.webContents.on("will-attach-webview", (event) => {
     event.preventDefault();
   });
+
+  // WP-11: network-class load failures on the main frame route to the
+  // packaged offline page so the user sees a recoverable error instead of
+  // a stuck blank window. Subframes and non-network failures are left
+  // alone — the app would otherwise swallow real HTTP 4xx/5xx responses
+  // and user-cancelled navigations.
+  win.webContents.on(
+    "did-fail-load",
+    (
+      _event,
+      errorCode,
+      errorDesc,
+      validatedURL,
+      isMainFrame,
+      _frameProcessId,
+      _frameRoutingId,
+    ) => {
+      if (!isMainFrame) {
+        return;
+      }
+      if (!isNetworkError(errorCode)) {
+        return;
+      }
+      const detail = `${errorCode} ${errorDesc}`.trim();
+      showOfflinePage(win, validatedURL, detail).catch((error) => {
+        console.error("Failed to show offline page:", error);
+      });
+    },
+  );
 
   // WP-11: offline handling
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyUrl,
   createAuthFlowGuard,
+  isNetworkError,
   isSafeExternalUrl,
   type UrlAction,
 } from "./security";
@@ -114,5 +115,52 @@ describe("createAuthFlowGuard", () => {
     expect(guard.isActive()).toBe(false);
     guard.begin();
     expect(guard.isActive()).toBe(true);
+  });
+});
+
+describe("isNetworkError", () => {
+  it.each([
+    [-100, "ERR_CONNECTION_CLOSED"],
+    [-101, "ERR_CONNECTION_RESET"],
+    [-102, "ERR_CONNECTION_REFUSED"],
+    [-104, "ERR_NOT_CONNECTED"],
+    [-105, "ERR_NAME_NOT_RESOLVED"],
+    [-106, "ERR_INTERNET_DISCONNECTED"],
+    [-109, "ERR_ADDRESS_UNREACHABLE"],
+    [-113, "ERR_NETWORK_UNREACHABLE"],
+    [-118, "ERR_TIMED_OUT"],
+    [-127, "ERR_NETWORK_CHANGED"],
+  ])("returns true for %i (%s)", (code) => {
+    expect(isNetworkError(code)).toBe(true);
+  });
+
+  it("accepts stringified codes", () => {
+    expect(isNetworkError("-106")).toBe(true);
+    expect(isNetworkError("-102")).toBe(true);
+  });
+
+  it.each([
+    [-20, "ERR_ABORTED (user cancel)"],
+    [-21, "ERR_FAILED"],
+    [-2, "ERR_FAILED (legacy)"],
+    [-3, "ERR_ABORTED (legacy)"],
+    [0, "no error"],
+    [200, "HTTP 200"],
+    [404, "HTTP 404"],
+    [500, "HTTP 500"],
+  ])("returns false for %i (%s)", (code) => {
+    expect(isNetworkError(code)).toBe(false);
+  });
+
+  it.each(["", "not-a-number", "ERR_INTERNET_DISCONNECTED"])(
+    "returns false for unparseable string %s",
+    (value) => {
+      expect(isNetworkError(value)).toBe(false);
+    },
+  );
+
+  it("returns false for NaN/Infinity-like inputs", () => {
+    expect(isNetworkError(Number.NaN)).toBe(false);
+    expect(isNetworkError("NaN")).toBe(false);
   });
 });

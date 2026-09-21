@@ -7,6 +7,52 @@ export type UrlAction =
   | { kind: "BLOCK" }; // cancel, do nothing else
 
 /**
+ * Chromium net error codes that represent a transport-level failure
+ * (no connectivity / unreachable / refused / timed out). Reported as
+ * negative integers from `did-fail-load`. HTTP application status codes
+ * (404, 500, …) come through as non-negative numbers, and `ERR_ABORTED`
+ * (-20) is a user-initiated cancel, so neither belongs in this set.
+ *
+ * Source: net/base/net_error_list.h in Chromium.
+ */
+const NETWORK_ERROR_CODES: ReadonlySet<number> = new Set<number>([
+  -100, // ERR_CONNECTION_CLOSED
+  -101, // ERR_CONNECTION_RESET
+  -102, // ERR_CONNECTION_REFUSED
+  -103, // ERR_CONNECTION_ABORTED
+  -104, // ERR_NOT_CONNECTED
+  -105, // ERR_NAME_NOT_RESOLVED
+  -106, // ERR_INTERNET_DISCONNECTED
+  -109, // ERR_ADDRESS_UNREACHABLE
+  -113, // ERR_NETWORK_UNREACHABLE
+  -118, // ERR_TIMED_OUT
+  -127, // ERR_NETWORK_CHANGED
+]);
+
+/**
+ * Classify a Chromium `did-fail-load` error code as a network failure.
+ *
+ * - Negative integers inside `NETWORK_ERROR_CODES` → true.
+ * - Non-negative numbers (HTTP status codes, e.g. 404/500) → false.
+ * - `ERR_ABORTED` (-20) and similar user-cancel codes → false.
+ * - Unparseable strings → false.
+ *
+ * Accepts strings because Electron has historically passed stringified
+ * codes in some code paths; we coerce defensively rather than throwing.
+ */
+export function isNetworkError(errorCode: number | string): boolean {
+  const numeric = typeof errorCode === "string" ? Number(errorCode) : errorCode;
+  if (!Number.isFinite(numeric)) {
+    return false;
+  }
+  if (numeric >= 0) {
+    // Non-negative codes are HTTP status codes or "no error"; never network.
+    return false;
+  }
+  return NETWORK_ERROR_CODES.has(numeric);
+}
+
+/**
  * Classify a URL for navigation handling.
  *
  * Rules, in order:
