@@ -1,0 +1,223 @@
+name: Release (Windows)
+
+# Tagged releases only. Pull-request CI lives in ci.yml and stays there: this
+# workflow builds a Windows installer, which ci.yml's ubuntu-latest runner
+# cannot do, and it publishes artifacts, which PR CI must never do.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify artifacts without publishing a release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Prisma's schema is required by `prisma generate`, which the Next.js build
+  # needs. These are build-time placeholders only — no database is contacted,
+  # and nothing here is packaged into the desktop app.
+  DATABASE_URL: "postgresql://user:password@localhost:5432/build"
+  AUTH_SECRET: "build-time-placeholder-not-a-secret"
+  AUTH_GOOGLE_ID: "build-time-placeholder"
+  AUTH_GOOGLE_SECRET: "build-time-placeholder"
+  # The packaged app is a thin client; this is the hosted origin it loads and
+  # is compiled into the build. Override with a repository variable.
+  DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL || 'https://titleix.example.org' }}
+
+jobs:
+  build:
+    name: Build signed installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck (web)
+        run: npm run typecheck
+
+      - name: Typecheck (electron)
+        run: npm run desktop:typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build Next.js app
+        run: npm run build
+
+      - name: Compile Electron main process
+        run: npm run desktop:compile
+
+      # --- Signing ---------------------------------------------------------
+      # WP-15A hard rule 1: signing material comes from Actions secrets only.
+      # WP-15A hard rule 4: an unsigned build must not produce an update feed,
+      # so this gate fails the release closed instead of silently shipping an
+      # unsigned installer that the (signed) updater would have to trust.
+      #
+      # Maintainer action required: set the secrets below, then this step
+      # activates on its own. See docs/DESKTOP-RELEASE-PIPELINE.md.
+      - name: Detect signing credentials
+        id: signing
+        shell: pwsh
+        run: |
+          $present = [bool]$env:WINDOWS_CERTIFICATE_BASE64 -and [bool]$env:WINDOWS_CERTIFICATE_PASSWORD
+          "available=$($present.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          if ($present) {
+            Write-Host "Signing credentials detected."
+          } else {
+            Write-Host "::warning title=Unsigned build::No signing credentials configured. The installer will be built but NOT signed, and the update feed will NOT be published. This release cannot be installed by an existing signed build."
+          }
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
+      - name: Materialise signing certificate
+        if: steps.signing.outputs.available == 'true'
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          "WINDOWS_CERTIFICATE_FILE=$path" >> $env:GITHUB_ENV
+          "WINDOWS_CERTIFICATE_PASSWORD=$env:WINDOWS_CERTIFICATE_PASSWORD" >> $env:GITHUB_ENV
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
+      # --- Package ---------------------------------------------------------
+      # The certificate is intentionally still on disk here: electron-builder
+      # reads it during packaging. It is removed by the `if: always()` step
+      # below, which must stay AFTER this step.
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          # `npx electron-builder` is invoked directly rather than via the
+          # `desktop:dist:win` script: npm 12 rejects `--` argument forwarding
+          # into a script, and these flags (certificate path, no-publish) must
+          # reach electron-builder. The script's other two steps are run
+          # explicitly here so the two paths cannot drift.
+          npm run desktop:compile
+          npm run desktop:copy-assets
+          if ($env:WINDOWS_CERTIFICATE_FILE) {
+            npx electron-builder --win --x64 --publish never -c.win.certificateFile="$env:WINDOWS_CERTIFICATE_FILE"
+          } else {
+            npx electron-builder --win --x64 --publish never
+          }
+        env:
+          # electron-builder reads the password from the environment, which
+          # keeps it off the command line (and out of the runner's process
+          # list). Unset for an unsigned build, where it is simply ignored.
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          # Never publish from the build step: the "Publish release" step
+          # below decides, based on whether signing actually happened. Also
+          # passed as --publish never, so a tag cannot trigger publishing.
+          EP_DRAFT: "false"
+
+      - name: Remove signing certificate
+        if: always() && steps.signing.outputs.available == 'true'
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          if (Test-Path $path) { Remove-Item -Force $path }
+
+      - name: Verify signature
+        if: steps.signing.outputs.available == 'true'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist-desktop -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "No installer produced." }
+          $sig = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          Write-Host "$($installer.Name): $($sig.Status) / $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne "Valid") { throw "Installer signature is not valid: $($sig.Status)" }
+          $inner = Get-ChildItem dist-desktop\win-unpacked -Filter "*.exe" |
+            Where-Object { $_.Name -like "Title IX Policy Tracker*" } | Select-Object -First 1
+          if ($inner) {
+            $innerSig = Get-AuthenticodeSignature -LiteralPath $inner.FullName
+            Write-Host "$($inner.Name): $($innerSig.Status)"
+            if ($innerSig.Status -ne "Valid") { throw "Application binary signature is not valid: $($innerSig.Status)" }
+          } else {
+            throw "Application binary not found in win-unpacked."
+          }
+
+      # --- Packaging contract ---------------------------------------------
+      # Asserts the asar carries the updater's full dependency closure and no
+      # server code or secrets. This is the regression guard for WP-14's asar
+      # audit after re-including node_modules for electron-updater.
+      - name: Verify packaging contract
+        run: node scripts/verify-desktop-pack.mjs
+
+      # --- Checksums and artefacts ----------------------------------------
+
+      - name: Compute checksums
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem dist-desktop -File |
+            Where-Object { $_.Extension -in ".exe", ".yml", ".blockmap" } |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLower()
+              "$hash  $($_.Name)"
+            }
+          $lines | Set-Content -Encoding ascii dist-desktop\SHA256SUMS.txt
+          $lines | Write-Host
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-${{ steps.signing.outputs.available == 'true' && 'signed' || 'unsigned' }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            dist-desktop/*.exe
+            dist-desktop/*.yml
+            dist-desktop/*.blockmap
+            dist-desktop/SHA256SUMS.txt
+
+      # --- Publish ---------------------------------------------------------
+      # Fail closed: a release is only published when the build was signed.
+      # Publishing an unsigned feed would advertise an installer that existing
+      # signed builds must trust, which WP-15A hard rule 4 forbids.
+      - name: Guard release publication
+        if: steps.signing.outputs.available != 'true' && github.event_name == 'push'
+        shell: pwsh
+        run: |
+          Write-Host "::error title=Release blocked::Refusing to publish an unsigned release for tag ${{ github.ref_name }}."
+          Write-Host "Configure WINDOWS_CERTIFICATE_BASE64 and WINDOWS_CERTIFICATE_PASSWORD, then re-run."
+          exit 1
+
+      - name: Publish release
+        if: steps.signing.outputs.available == 'true' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $installer = Get-ChildItem dist-desktop -Filter "*.exe" | Select-Object -First 1
+          $latestYml = Join-Path "dist-desktop" "latest.yml"
+          $assets = @($installer.FullName, (Join-Path "dist-desktop" "SHA256SUMS.txt"))
+          if (Test-Path $latestYml) { $assets += $latestYml }
+          $blockmap = Get-ChildItem dist-desktop -Filter "*.exe.blockmap" | Select-Object -First 1
+          if ($blockmap) { $assets += $blockmap.FullName }
+          gh release create "${{ github.ref_name }}" @assets --title "${{ github.ref_name }}" --generate-notes --verify-tag

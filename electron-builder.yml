@@ -12,6 +12,33 @@ files:
   - electron-dist/**/*
   - package.json
   - "!node_modules/**/*"
+
+  # electron-updater is a runtime dependency of the packaged main process, so
+  # its dependency closure must be re-included by name: the negation above
+  # drops all of node_modules, including electron-builder's normally-automatic
+  # production-dependency collection. This is an allowlist on purpose — an
+  # unsigned or partial dependency set would break the updater silently, and
+  # a denylist would silently start shipping next/react/prisma the day a new
+  # dependency is added. `npm run desktop:verify-pack` asserts the built asar
+  # matches this list exactly and contains no server code or secrets.
+  - node_modules/electron-updater/**/*
+  - node_modules/electron-log/**/*
+  - node_modules/builder-util-runtime/**/*
+  - node_modules/fs-extra/**/*
+  - node_modules/graceful-fs/**/*
+  - node_modules/jsonfile/**/*
+  - node_modules/universalify/**/*
+  - node_modules/js-yaml/**/*
+  - node_modules/argparse/**/*
+  - node_modules/lazy-val/**/*
+  - node_modules/lodash.escaperegexp/**/*
+  - node_modules/lodash.isequal/**/*
+  - node_modules/semver/**/*
+  - node_modules/tiny-typed-emitter/**/*
+  - node_modules/debug/**/*
+  - node_modules/ms/**/*
+  - node_modules/sax/**/*
+
   - "!src/**/*"
   - "!prisma/**/*"
   - "!.next/**/*"
@@ -21,6 +48,20 @@ win:
   target:
     - nsis
   icon: build/icon.ico
+
+# The GitHub provider derives owner/repo from `repository` in package.json, so
+# there is no hardcoded feed URL to drift out of sync. This also fixes the WP-14
+# defect where `desktop:dist:win` crashed post-build in
+# app-builder-lib/updateInfoBuilder.computeChannelNames because there was no
+# publish config to resolve a channel from.
+#
+# Requires a Windows code-signing certificate (Slice A). electron-updater
+# verifies the publisher name of downloaded artifacts against the installed
+# app; without a real certificate that check cannot pass, so there is no
+# unsigned update path — see docs/DESKTOP-SIGNING-UPDATES.md.
+publish:
+  provider: github
+  releaseType: release
 
 nsis:
   oneClick: false

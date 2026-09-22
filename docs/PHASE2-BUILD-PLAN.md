@@ -1,6 +1,6 @@
 # Phase 2 Build Plan — Desktop Release Pipeline, Signing & Auto-Updates
 
-**Status:** PLAN — nothing in this file is implemented yet. This is the kickoff brief for the Phase 2 build session.
+**Status:** PARTIALLY IMPLEMENTED — see `docs/PHASE2-STATUS.md` for exactly what landed, what is blocked, and what the maintainer still needs to supply. Slices B and C are implemented and locally verified; Slice A and the sign stage of B need a signing certificate, and Slice D needs a clean Windows 11 VM.
 **Scope source:** WP-15A (Deferred Items 1–2) and WP-15B (Deferred Items 3–4), recorded in `docs/DESKTOP-SIGNING-UPDATES.md` and `docs/DESKTOP-RELEASE-PIPELINE.md` (both on `main` via PR #34).
 **Prerequisite (per both workplans):** WP-14B complete and approved by the maintainer. WP-14's audit is `docs/DESKTOP-AUDIT.md`. Read `desktop-workplans/00-PROJECT-CONTEXT.md` first (it lives with the workplans, not in this repo).
 **Quality bar:** every PR must clear the thermo-nuclear standard in `docs/ORCHESTRATOR.md` — structural simplification, no file over 1000 lines, no thin wrappers, typed boundaries, canonical helpers. One vertical slice per PR; never mix ingest/product work with desktop release work.

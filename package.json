@@ -2,7 +2,11 @@
   "name": "titleix-policy-tracker",
   "version": "1.0.0",
   "private": true,
-    "main": "electron-dist/main.js",
+  "main": "electron-dist/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TriBrigadeMars/titleix-policy-tracker.git"
+  },
   "engines": {
     "node": ">=22 <23"
   },
@@ -22,7 +26,8 @@
     "desktop:copy-assets": "node -e \"require('node:fs').copyFileSync('electron/offline.html','electron-dist/offline.html')\"",
     "desktop:dev": "concurrently -k \"npm run dev\" \"npm run desktop:compile && wait-on -t 60000 http://localhost:3000 && cross-env NODE_ENV=development electron electron-dist/main.js\"",
     "desktop:pack": "npm run desktop:compile && npm run desktop:copy-assets && electron-builder --dir",
-        "desktop:dist:win": "npm run desktop:compile && npm run desktop:copy-assets && electron-builder --win --x64"
+    "desktop:dist:win": "npm run desktop:compile && npm run desktop:copy-assets && electron-builder --win --x64",
+    "desktop:verify-pack": "node scripts/verify-desktop-pack.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.0.0",
@@ -35,6 +40,8 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "cmdk": "^1.1.1",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.460.0",
     "next": "^15.3.5",
     "next-auth": "5.0.0-beta.25",
@@ -45,9 +52,11 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/semver": "^7.8.0",
     "autoprefixer": "^10.6.1",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
