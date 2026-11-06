@@ -3,9 +3,11 @@ import { Dashboard } from "@/components/dashboard";
 import { PublicReadOnlyNote } from "@/components/public-readonly-note";
 import {
   getCellNotesForComparison,
+  getDefaultComparisonCodes,
   getInstrumentsForComparison,
   getIssueTags,
   getJurisdictions,
+  getPublicFreshness,
 } from "@/lib/queries";
 import { canEditRole } from "@/lib/roles";
 import {
@@ -31,13 +33,21 @@ export default async function Home({
 
   const jurisdictions = await getJurisdictions();
   const byCode = new Map(jurisdictions.map((j) => [j.code, j]));
-  const selected = requestedCodes.flatMap((code) => {
+
+  const effectiveCodes =
+    requestedCodes.length > 0
+      ? requestedCodes
+      : await getDefaultComparisonCodes(jurisdictions);
+
+  const selected = effectiveCodes.flatMap((code) => {
     const match = byCode.get(code);
     return match ? [match] : [];
   });
 
   const canCompare = selected.length >= 2;
   const selectedIds = selected.map((j) => j.id);
+
+  const freshness = await getPublicFreshness();
 
   const [issueTags, instruments, cellNotes] = canCompare
     ? await Promise.all([
@@ -57,6 +67,7 @@ export default async function Home({
         issueTags={issueTags}
         instruments={instruments}
         cellNotes={cellNotes}
+        freshness={freshness}
       />
     </>
   );

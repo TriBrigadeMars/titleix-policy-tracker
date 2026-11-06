@@ -1,0 +1,162 @@
+{
+  "checkedAt": "2026-11-01T12:00:00.000Z",
+  "instruments": [
+    {
+      "jurisdictionCode": "US",
+      "type": "BILL",
+      "identifier": "HR-734-119",
+      "title": "Protection of Women and Girls in Sports Act of 2025",
+      "status": "PROPOSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 95,
+      "source": "congress",
+      "sourceId": "HR-734-119",
+      "sourceUrl": "https://www.congress.gov/bill/119th-congress/house-bill/734",
+      "rawSummary": "A bill relating to athletics eligibility under Title IX.",
+      "issueTagSlugs": ["athletics", "coverage"]
+    },
+    {
+      "jurisdictionCode": "US",
+      "type": "REGULATION",
+      "identifier": "34-CFR-106",
+      "title": "Nondiscrimination on the Basis of Sex in Education Programs (Title IX)",
+      "status": "EFFECTIVE",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 100,
+      "source": "fixture",
+      "sourceId": "34-CFR-106",
+      "sourceUrl": "https://www.ecfr.gov/current/title-34/subtitle-B/chapter-I/part-106",
+      "rawSummary": "Federal Title IX regulations covering sex discrimination, sexual harassment, grievance procedures, and athletics.",
+      "issueTagSlugs": ["coverage", "harassment", "grievance", "athletics", "reporting"]
+    },
+    {
+      "jurisdictionCode": "US",
+      "type": "BILL",
+      "identifier": "S-1241-119",
+      "title": "Students Bill of Rights addressing Title IX grievance and due process",
+      "status": "PROPOSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 80,
+      "source": "congress",
+      "sourceId": "S-1241-119",
+      "sourceUrl": "https://www.congress.gov/bill/119th-congress/senate-bill/1241",
+      "rawSummary": "Proposed changes to Title IX grievance procedures and due process for sexual harassment cases.",
+      "issueTagSlugs": ["grievance", "harassment"]
+    },
+    {
+      "jurisdictionCode": "CA",
+      "type": "BILL",
+      "identifier": "CA-2023-AB 1327",
+      "title": "School athletics: Title IX equity and participation",
+      "status": "PASSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 90,
+      "source": "openstates",
+      "sourceId": "ocd-bill/fixture-ca-ab1327",
+      "sourceUrl": "https://openstates.org/ca/bills/2023/AB1327/",
+      "rawSummary": "California athletics eligibility and sex discrimination in school sports.",
+      "issueTagSlugs": ["athletics"]
+    },
+    {
+      "jurisdictionCode": "CA",
+      "type": "BILL",
+      "identifier": "CA-2023-SB 14",
+      "title": "Student facilities and housing: sex discrimination and locker rooms",
+      "status": "PASSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 85,
+      "source": "openstates",
+      "sourceId": "ocd-bill/fixture-ca-sb14",
+      "sourceUrl": "https://openstates.org/ca/bills/2023/SB14/",
+      "rawSummary": "Access to restrooms, locker rooms, and student housing under sex discrimination rules.",
+      "issueTagSlugs": ["facilities"]
+    },
+    {
+      "jurisdictionCode": "TX",
+      "type": "BILL",
+      "identifier": "TX-88-SB 15",
+      "title": "Interscholastic athletics eligibility and biological sex",
+      "status": "EFFECTIVE",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 90,
+      "source": "legiscan",
+      "sourceId": "fixture-tx-sb15",
+      "sourceUrl": "https://legiscan.com/TX/bill/SB15/2023",
+      "rawSummary": "Texas athletics eligibility rules for sex-separated sports programs.",
+      "issueTagSlugs": ["athletics", "coverage"]
+    },
+    {
+      "jurisdictionCode": "TX",
+      "type": "BILL",
+      "identifier": "TX-88-HB 1002",
+      "title": "School facilities: restrooms and locker rooms",
+      "status": "PASSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 80,
+      "source": "legiscan",
+      "sourceId": "fixture-tx-hb1002",
+      "sourceUrl": "https://legiscan.com/TX/bill/HB1002/2023",
+      "rawSummary": "Facilities access rules for sex-separated restrooms and locker rooms in public schools.",
+      "issueTagSlugs": ["facilities"]
+    },
+    {
+      "jurisdictionCode": "FL",
+      "type": "BILL",
+      "identifier": "FL-2023-SB 266",
+      "title": "Higher education: gender identity and sex discrimination",
+      "status": "EFFECTIVE",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 75,
+      "source": "openstates",
+      "sourceId": "ocd-bill/fixture-fl-sb266",
+      "sourceUrl": "https://openstates.org/fl/bills/2023/SB266/",
+      "rawSummary": "Florida higher-education rules affecting gender identity coverage under sex discrimination law.",
+      "issueTagSlugs": ["coverage"]
+    },
+    {
+      "jurisdictionCode": "NY",
+      "type": "BILL",
+      "identifier": "NY-2023-A 7285",
+      "title": "Gender identity in school athletics programs",
+      "status": "PROPOSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 70,
+      "source": "openstates",
+      "sourceId": "ocd-bill/fixture-ny-a7285",
+      "sourceUrl": "https://openstates.org/ny/bills/2023/A7285/",
+      "rawSummary": "Proposed athletics eligibility rules involving gender identity.",
+      "issueTagSlugs": ["athletics", "coverage"]
+    },
+    {
+      "jurisdictionCode": "US",
+      "type": "BILL",
+      "identifier": "HR-9001-119",
+      "title": "Sense of Congress on Title IX pregnancy and parental status protections",
+      "status": "PROPOSED",
+      "triageStatus": "RELEVANT",
+      "relevanceConfidence": 60,
+      "source": "congress",
+      "sourceId": "HR-9001-119",
+      "sourceUrl": "https://www.congress.gov/bill/119th-congress/house-bill/9001",
+      "rawSummary": "Relevant Title IX bill that has not yet been tagged to a matrix issue.",
+      "issueTagSlugs": []
+    }
+  ],
+  "cellNotes": [
+    {
+      "jurisdictionCode": "US",
+      "issueTagSlug": "athletics",
+      "body": "Federal picture: 34 C.F.R. Part 106 remains the Title IX athletics baseline. HR 734 would tighten athletics eligibility around sex-separated teams. Source: Congress.gov HR 734 and eCFR Part 106."
+    },
+    {
+      "jurisdictionCode": "CA",
+      "issueTagSlug": "athletics",
+      "body": "California AB 1327 addresses school athletics participation and Title IX equity. Compare with the federal Part 106 athletics baseline."
+    },
+    {
+      "jurisdictionCode": "TX",
+      "issueTagSlug": "athletics",
+      "body": "Texas SB 15 sets interscholastic athletics eligibility by biological sex. It is in force alongside the federal Title IX athletics rules."
+    }
+  ]
+}

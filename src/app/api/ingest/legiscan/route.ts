@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guards";
-import { upsertInstruments } from "@/lib/ingest";
 import { legiScanAdapter } from "@/lib/ingest/legiscan";
+import { runIngest } from "@/lib/ingest/pipeline";
 import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
 const MAX_INGEST_LIMIT = 5000;
@@ -30,11 +30,12 @@ export async function POST(request: Request) {
       : paramInt(limitParam, 1, 1, MAX_INGEST_LIMIT);
 
   try {
-    const rows = await legiScanAdapter.fetch({
-      ...(id ? { id } : state ? { state } : {}),
-      ...(limit === undefined ? {} : { limit }),
-    });
-    const result = await upsertInstruments(rows);
+    const result = await runIngest(legiScanAdapter.name, () =>
+      legiScanAdapter.fetch({
+        ...(id ? { id } : state ? { state } : {}),
+        ...(limit === undefined ? {} : { limit }),
+      })
+    );
     return NextResponse.json({
       source: legiScanAdapter.name,
       ...result,

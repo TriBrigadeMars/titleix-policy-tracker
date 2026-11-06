@@ -160,9 +160,22 @@ describe("openStatesAdapter.fetch", () => {
     expect(rows).toHaveLength(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("jurisdiction=nc");
+    expect(url).not.toMatch(/[?&]page=/);
     expect((init.headers as Record<string, string>)["X-API-KEY"]).toBe(
       "test-key"
     );
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("requests page when greater than 1", async () => {
+    process.env.OPEN_STATES_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(completeBill),
+    });
+
+    await openStatesAdapter.fetch({ jurisdiction: "ca", limit: 50, page: 2 });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toMatch(/[?&]page=2/);
   });
 });

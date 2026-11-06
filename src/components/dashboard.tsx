@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { JurisdictionSelector } from "@/components/jurisdiction-selector";
 import { ComparisonMatrix } from "@/components/comparison-matrix";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PublicDataFreshness } from "@/components/public-data-freshness";
+import type { PublicFreshness } from "@/lib/queries";
 import type { CellNote, Instrument, IssueTag, Jurisdiction } from "@/types";
 
 /**
@@ -19,6 +21,7 @@ export function Dashboard({
   issueTags,
   instruments,
   cellNotes,
+  freshness,
 }: {
   canEdit: boolean;
   jurisdictions: Jurisdiction[];
@@ -26,9 +29,10 @@ export function Dashboard({
   issueTags: IssueTag[];
   instruments: Instrument[];
   cellNotes: CellNote[];
+  freshness: PublicFreshness;
 }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [selected, setSelected] = useState(selectedCodes);
 
   useEffect(() => {
@@ -78,8 +82,8 @@ export function Dashboard({
             instruments={instruments}
             cellNotes={cellNotes}
             canEdit={canEdit}
-            isPending={isPending}
           />
+          <PublicDataFreshness freshness={freshness} />
         </CardContent>
       </Card>
     </main>

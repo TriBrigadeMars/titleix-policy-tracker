@@ -205,6 +205,80 @@ export async function getCellNotesForComparison(input: {
   return rows.map(toCellNote);
 }
 
+const FALLBACK_DEFAULT_STATE_CODES = ["CA", "TX"] as const;
+
+/**
+ * Cold-open comparison when `?j=` is absent: federal plus two states. Prefers
+ * two state jurisdictions that already have relevant instruments; otherwise
+ * falls back to CA and TX when those rows exist.
+ */
+export async function getDefaultComparisonCodes(
+  jurisdictions: Jurisdiction[]
+): Promise<string[]> {
+  const byCode = new Map(jurisdictions.map((j) => [j.code, j]));
+  const federal = byCode.get("US");
+
+  const stateList = jurisdictions.filter((j) => j.level === "STATE");
+
+  const counts = await prisma.instrument.groupBy({
+    by: ["jurisdictionId"],
+    where: { triageStatus: "RELEVANT" },
+    _count: { id: true },
+  });
+  const countById = new Map(
+    counts.map((c) => [c.jurisdictionId, c._count.id])
+  );
+
+  const statesWithData = stateList
+    .filter((j) => (countById.get(j.id) ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        (countById.get(b.id) ?? 0) - (countById.get(a.id) ?? 0)
+    );
+
+  const picked = new Map<string, Jurisdiction>();
+
+  for (const j of statesWithData) {
+    if (picked.size >= 2) break;
+    picked.set(j.code, j);
+  }
+
+  if (picked.size < 2) {
+    for (const code of FALLBACK_DEFAULT_STATE_CODES) {
+      const j = byCode.get(code);
+      if (j && j.level === "STATE" && !picked.has(code)) {
+        picked.set(code, j);
+      }
+      if (picked.size >= 2) break;
+    }
+  }
+
+  if (picked.size < 2) {
+    for (const j of stateList) {
+      if (!picked.has(j.code)) picked.set(j.code, j);
+      if (picked.size >= 2) break;
+    }
+  }
+
+  const stateCodes = [...picked.keys()].slice(0, 2);
+
+  if (federal && stateCodes.length >= 2) {
+    return ["US", ...stateCodes];
+  }
+  if (federal && stateCodes.length === 1) {
+    return ["US", stateCodes[0]];
+  }
+  if (stateCodes.length >= 2) {
+    return stateCodes.slice(0, 2);
+  }
+  if (federal) {
+    const one =
+      stateCodes[0] ?? stateList.find((j) => j.code !== "US")?.code;
+    return one ? ["US", one] : [federal.code];
+  }
+  return stateCodes;
+}
+
 export function instrumentTriageWhere(input: {
   jurisdictionId?: string;
   status?: InstrumentStatus;
@@ -220,12 +294,18 @@ export function instrumentTriageWhere(input: {
     where.status = input.status;
   }
 
-  if (input.relevance !== "all") {
-      Object.assign(where, triageWhere(input.relevance));
-    }
-
+  if (input.relevance === "relevant_untagged") {
+    where.triageStatus = "RELEVANT";
+    where.issueTags = { none: {} };
     return where;
   }
+
+  if (input.relevance !== "all") {
+    Object.assign(where, triageWhere(input.relevance));
+  }
+
+  return where;
+}
 
 export async function getInstrumentsForTriage(input: {
   jurisdictionCode?: string;
@@ -251,11 +331,73 @@ export async function getInstrumentsForTriage(input: {
       relevance: input.relevance,
     }),
     include: instrumentWithNotesInclude,
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ lastCheckedAt: "desc" }, { createdAt: "desc" }],
     take: input.limit ?? 50,
   });
 
   return rows.map(toInstrument);
+}
+
+export interface TriageQueueCounts {
+  unreviewed: number;
+  relevantUntagged: number;
+}
+
+export async function getTriageQueueCounts(): Promise<TriageQueueCounts> {
+  const [unreviewed, relevantUntagged] = await Promise.all([
+    prisma.instrument.count({ where: { triageStatus: "UNREVIEWED" } }),
+    prisma.instrument.count({
+      where: { triageStatus: "RELEVANT", issueTags: { none: {} } },
+    }),
+  ]);
+  return { unreviewed, relevantUntagged };
+}
+
+export interface PublicFreshness {
+  lastSuccessfulRunAt: string | null;
+  lastSuccessfulSource: string | null;
+  lastFailedRunAt: string | null;
+  lastFailedErrorClass: string | null;
+  oldestLastCheckedAt: string | null;
+  newestLastCheckedAt: string | null;
+}
+
+/**
+ * Freshness is a stored ingest run when one exists. Instrument timestamps are
+ * the fallback for a fixture-only database that has not run adapters yet.
+ */
+export async function getPublicFreshness(): Promise<PublicFreshness> {
+  const [successful, failed, oldest, newest] = await Promise.all([
+    prisma.ingestRun.findFirst({
+      where: { status: "SUCCESS", finishedAt: { not: null } },
+      orderBy: { finishedAt: "desc" },
+      select: { finishedAt: true, source: true },
+    }),
+    prisma.ingestRun.findFirst({
+      where: { status: "FAILED", finishedAt: { not: null } },
+      orderBy: { finishedAt: "desc" },
+      select: { finishedAt: true, errorClass: true },
+    }),
+    prisma.instrument.findFirst({
+      where: { lastCheckedAt: { not: null } },
+      orderBy: { lastCheckedAt: "asc" },
+      select: { lastCheckedAt: true },
+    }),
+    prisma.instrument.findFirst({
+      where: { lastCheckedAt: { not: null } },
+      orderBy: { lastCheckedAt: "desc" },
+      select: { lastCheckedAt: true },
+    }),
+  ]);
+
+  return {
+    lastSuccessfulRunAt: successful?.finishedAt?.toISOString() ?? null,
+    lastSuccessfulSource: successful?.source ?? null,
+    lastFailedRunAt: failed?.finishedAt?.toISOString() ?? null,
+    lastFailedErrorClass: failed?.errorClass ?? null,
+    oldestLastCheckedAt: oldest?.lastCheckedAt?.toISOString() ?? null,
+    newestLastCheckedAt: newest?.lastCheckedAt?.toISOString() ?? null,
+  };
 }
 
 

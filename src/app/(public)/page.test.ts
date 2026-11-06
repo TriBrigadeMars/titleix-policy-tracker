@@ -1,18 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { auth, getJurisdictions, getHeatmapSummaries, getIssueTags } =
-  vi.hoisted(() => ({
-    auth: vi.fn(),
-    getJurisdictions: vi.fn(),
-    getHeatmapSummaries: vi.fn(),
-    getIssueTags: vi.fn(),
-  }));
+const {
+  auth,
+  getJurisdictions,
+  getHeatmapSummaries,
+  getIssueTags,
+  getDefaultComparisonCodes,
+  getPublicFreshness,
+} = vi.hoisted(() => ({
+  auth: vi.fn(),
+  getJurisdictions: vi.fn(),
+  getHeatmapSummaries: vi.fn(),
+  getIssueTags: vi.fn(),
+  getDefaultComparisonCodes: vi.fn(),
+  getPublicFreshness: vi.fn(),
+}));
 
 vi.mock("@/lib/auth", () => ({ auth }));
 vi.mock("@/lib/queries", () => ({
   getJurisdictions,
   getHeatmapSummaries,
   getIssueTags,
+  getDefaultComparisonCodes,
+  getPublicFreshness,
   getInstrumentsForComparison: vi.fn(async () => []),
   getCellNotesForComparison: vi.fn(async () => []),
 }));
@@ -77,6 +87,15 @@ describe("public comparison matrix page", () => {
     vi.clearAllMocks();
     getJurisdictions.mockResolvedValue([]);
     getIssueTags.mockResolvedValue([]);
+    getDefaultComparisonCodes.mockResolvedValue([]);
+    getPublicFreshness.mockResolvedValue({
+      lastSuccessfulRunAt: null,
+      lastSuccessfulSource: null,
+      lastFailedRunAt: null,
+      lastFailedErrorClass: null,
+      oldestLastCheckedAt: null,
+      newestLastCheckedAt: null,
+    });
   });
 
   it("renders the matrix read-only with no session", async () => {
@@ -112,6 +131,14 @@ describe("public heatmap page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getHeatmapSummaries.mockResolvedValue([]);
+    getPublicFreshness.mockResolvedValue({
+      lastSuccessfulRunAt: null,
+      lastSuccessfulSource: null,
+      lastFailedRunAt: null,
+      lastFailedErrorClass: null,
+      oldestLastCheckedAt: null,
+      newestLastCheckedAt: null,
+    });
   });
 
   it("still renders the heatmap with no session", async () => {

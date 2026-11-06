@@ -119,6 +119,17 @@ describe("instrumentTriageWhere", () => {
       jurisdictionId: "jur_2",
     });
   });
+
+  it("selects relevant instruments with no issue tags", () => {
+    expect(
+      instrumentTriageWhere({
+        relevance: "relevant_untagged",
+      })
+    ).toEqual({
+      triageStatus: "RELEVANT",
+      issueTags: { none: {} },
+    });
+  });
 });
 
 describe("userListWhere", () => {

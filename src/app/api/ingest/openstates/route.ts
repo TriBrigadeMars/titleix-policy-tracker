@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guards";
-import { upsertInstruments } from "@/lib/ingest";
 import { openStatesAdapter } from "@/lib/ingest/openstates";
+import { runIngest } from "@/lib/ingest/pipeline";
 import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
 const MAX_INGEST_LIMIT = 100;
@@ -41,8 +41,9 @@ export async function POST(request: Request) {
     const options: Record<string, string | number> = { jurisdiction, limit };
     if (session) options.session = session;
 
-    const rows = await openStatesAdapter.fetch(options);
-    const result = await upsertInstruments(rows);
+    const result = await runIngest(openStatesAdapter.name, () =>
+      openStatesAdapter.fetch(options)
+    );
     return NextResponse.json({
       source: openStatesAdapter.name,
       ...result,

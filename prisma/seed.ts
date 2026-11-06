@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -116,6 +119,157 @@ const ISSUE_TAGS = [
   },
 ] as const;
 
+interface FixtureInstrument {
+  jurisdictionCode: string;
+  type: "BILL" | "STATUTE" | "REGULATION";
+  identifier: string;
+  title: string;
+  status:
+    | "PROPOSED"
+    | "PASSED"
+    | "EFFECTIVE"
+    | "ENJOINED"
+    | "FAILED"
+    | "VETOED"
+    | "REPEALED";
+  triageStatus: "UNREVIEWED" | "RELEVANT" | "NOT_RELEVANT";
+  relevanceConfidence: number | null;
+  source: string | null;
+  sourceId: string | null;
+  sourceUrl: string | null;
+  rawSummary: string | null;
+  issueTagSlugs: string[];
+}
+
+interface FixtureCellNote {
+  jurisdictionCode: string;
+  issueTagSlug: string;
+  body: string;
+}
+
+interface DemoCorpus {
+  checkedAt: string;
+  instruments: FixtureInstrument[];
+  cellNotes: FixtureCellNote[];
+}
+
+function loadDemoCorpus(): DemoCorpus {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const raw = readFileSync(join(here, "fixtures", "demo-corpus.json"), "utf8");
+  return JSON.parse(raw) as DemoCorpus;
+}
+
+async function seedDemoCorpus() {
+  const corpus = loadDemoCorpus();
+  const checkedAt = new Date(corpus.checkedAt);
+
+  const jurisdictions = await prisma.jurisdiction.findMany({
+    select: { id: true, code: true },
+  });
+  const codeToId = new Map(jurisdictions.map((j) => [j.code, j.id]));
+
+  const issueTags = await prisma.issueTag.findMany({
+    select: { id: true, slug: true },
+  });
+  const slugToId = new Map(issueTags.map((t) => [t.slug, t.id]));
+
+  for (const row of corpus.instruments) {
+    const jurisdictionId = codeToId.get(row.jurisdictionCode);
+    if (!jurisdictionId) {
+      throw new Error(`Fixture jurisdiction missing: ${row.jurisdictionCode}`);
+    }
+
+    const instrument = await prisma.instrument.upsert({
+      where: {
+        jurisdictionId_type_identifier: {
+          jurisdictionId,
+          type: row.type,
+          identifier: row.identifier,
+        },
+      },
+      create: {
+        jurisdictionId,
+        type: row.type,
+        identifier: row.identifier,
+        title: row.title,
+        status: row.status,
+        triageStatus: row.triageStatus,
+        relevanceConfidence: row.relevanceConfidence,
+        source: row.source,
+        sourceId: row.sourceId,
+        sourceUrl: row.sourceUrl,
+        rawSummary: row.rawSummary,
+        lastCheckedAt: checkedAt,
+      },
+      update: {
+        title: row.title,
+        status: row.status,
+        triageStatus: row.triageStatus,
+        relevanceConfidence: row.relevanceConfidence,
+        source: row.source,
+        sourceId: row.sourceId,
+        sourceUrl: row.sourceUrl,
+        rawSummary: row.rawSummary,
+        lastCheckedAt: checkedAt,
+      },
+    });
+
+    await prisma.instrumentIssueTag.deleteMany({
+      where: { instrumentId: instrument.id },
+    });
+    const tagIds = row.issueTagSlugs.map((slug) => {
+      const id = slugToId.get(slug);
+      if (!id) throw new Error(`Fixture issue tag missing: ${slug}`);
+      return id;
+    });
+    if (tagIds.length > 0) {
+      await prisma.instrumentIssueTag.createMany({
+        data: tagIds.map((issueTagId) => ({
+          instrumentId: instrument.id,
+          issueTagId,
+        })),
+      });
+    }
+  }
+
+  for (const note of corpus.cellNotes) {
+    const jurisdictionId = codeToId.get(note.jurisdictionCode);
+    const issueTagId = slugToId.get(note.issueTagSlug);
+    if (!jurisdictionId || !issueTagId) {
+      throw new Error(
+        `Fixture cell note missing keys: ${note.jurisdictionCode}/${note.issueTagSlug}`
+      );
+    }
+    await prisma.cellNote.upsert({
+      where: {
+        jurisdictionId_issueTagId: { jurisdictionId, issueTagId },
+      },
+      create: {
+        jurisdictionId,
+        issueTagId,
+        body: note.body,
+      },
+      update: { body: note.body },
+    });
+  }
+
+  await prisma.ingestRun.create({
+    data: {
+      source: "fixture",
+      status: "SUCCESS",
+      startedAt: checkedAt,
+      finishedAt: checkedAt,
+      upserted: corpus.instruments.length,
+      skipped: 0,
+      dropped: 0,
+    },
+  });
+
+  console.log(
+    `Seeded demo corpus: ${corpus.instruments.length} reviewed instruments, ${corpus.cellNotes.length} cell notes.`
+  );
+}
+
 async function main() {
   await Promise.all(
     JURISDICTIONS.map((j) =>
@@ -138,6 +292,8 @@ async function main() {
   );
 
   console.log(`Seeded ${JURISDICTIONS.length} jurisdictions and ${ISSUE_TAGS.length} issue tags.`);
+
+  await seedDemoCorpus();
 }
 
 main()

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { describeFetchError } from "@/lib/fetch-error";
 import { formatDate } from "@/lib/format-date";
+import { publicCellHref } from "@/lib/public-cell";
 import { INSTRUMENT_NOTE_MAX_LENGTH } from "@/lib/validation";
 import type { Instrument, InstrumentNote, IssueTag, TriageStatus } from "@/types";
 
@@ -22,16 +23,20 @@ interface InstrumentTriageEditorProps {
   instrument: Instrument;
   issueTags: IssueTag[];
   isOpen: boolean;
+  hasNext?: boolean;
   onClose: () => void;
   onSaved: (updated: Instrument) => void;
+  onUpdated?: (updated: Instrument) => void;
 }
 
 export function InstrumentTriageEditor({
   instrument,
   issueTags,
   isOpen,
+  hasNext = false,
   onClose,
   onSaved,
+  onUpdated,
 }: InstrumentTriageEditorProps) {
   const [currentTriageStatus, setCurrentTriageStatus] = useState<TriageStatus>(
     () => instrument.triageStatus
@@ -71,6 +76,13 @@ export function InstrumentTriageEditor({
     [instrument, currentTriageStatus, confidence, issueTags, selectedTags]
   );
 
+  const firstSelectedSlug = issueTags.find((tag) => selectedTags.has(tag.id))
+    ?.slug;
+  const publicHref = publicCellHref(
+    instrument.jurisdiction.code,
+    firstSelectedSlug
+  );
+
   function toggleTag(tagId: string) {
     setSelectedTags((prev) => {
       const next = new Set(prev);
@@ -107,7 +119,6 @@ export function InstrumentTriageEditor({
       // Keep notes in sync
       updated.notes = notes;
       onSaved(updated);
-      onClose();
     } catch {
       setError("Could not reach the server.");
     } finally {
@@ -141,7 +152,7 @@ export function InstrumentTriageEditor({
       setNewNoteBody("");
 
       // Update parent instrument state with new notes
-      onSaved(deriveUpdatedInstrument(updatedNotes));
+      onUpdated?.(deriveUpdatedInstrument(updatedNotes));
     } catch {
       setNoteError("Could not reach the server.");
     } finally {
@@ -166,7 +177,7 @@ export function InstrumentTriageEditor({
       const updatedNotes = notes.filter((n) => n.id !== noteId);
       setNotes(updatedNotes);
 
-      onSaved(deriveUpdatedInstrument(updatedNotes));
+      onUpdated?.(deriveUpdatedInstrument(updatedNotes));
     } catch {
       setNoteError("Could not reach the server.");
     } finally {
@@ -332,6 +343,17 @@ export function InstrumentTriageEditor({
             <div className="text-sm text-destructive font-medium">{error}</div>
           )}
 
+          <a
+            href={publicHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1"
+          >
+            Open public cell
+            {firstSelectedSlug ? ` (${firstSelectedSlug})` : ""}{" "}
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
               Close
@@ -341,7 +363,11 @@ export function InstrumentTriageEditor({
               onClick={handleSaveTriage}
               disabled={isSaving}
             >
-              {isSaving ? "Saving..." : "Save Triage Status"}
+              {isSaving
+                ? "Saving..."
+                : hasNext
+                  ? "Save and next"
+                  : "Save Triage Status"}
             </Button>
           </div>
 

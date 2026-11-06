@@ -27,7 +27,6 @@ interface ComparisonMatrixProps {
   cellNotes: CellNote[];
   /** Resolved on the server from the session. Purely a display concern. */
   canEdit?: boolean;
-  isPending?: boolean;
 }
 
 function cellKey(jurisdictionId: string, issueTagId: string) {
@@ -40,7 +39,6 @@ export function ComparisonMatrix({
   instruments,
   cellNotes,
   canEdit = false,
-  isPending = false,
 }: ComparisonMatrixProps) {
   const router = useRouter();
   const [notes, setNotes] = useState(cellNotes);
@@ -49,6 +47,13 @@ export function ComparisonMatrix({
   useEffect(() => {
     setNotes(cellNotes);
   }, [cellNotes]);
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+    const node = document.getElementById(hash);
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [issueTags, jurisdictions]);
 
   const notesByCell = useMemo(() => {
     const map = new Map<string, CellNote>();
@@ -87,6 +92,14 @@ export function ComparisonMatrix({
     return instruments.some((inst) => !inst.issueTags || inst.issueTags.length === 0);
   }, [instruments]);
 
+  const jurisdictionHasRelevantInstrument = useMemo(() => {
+    const set = new Set<string>();
+    for (const inst of instruments) {
+      set.add(inst.jurisdictionId);
+    }
+    return set;
+  }, [instruments]);
+
   function handleSaved(note: CellNote) {
     setNotes((prev) => [
       ...prev.filter(
@@ -115,14 +128,6 @@ export function ComparisonMatrix({
     );
   }
 
-  if (isPending) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        Loading comparison data...
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="overflow-x-auto">
@@ -137,14 +142,17 @@ export function ComparisonMatrix({
                   key={jurisdiction.id}
                   className="min-w-[200px] text-center"
                 >
-                  {jurisdiction.code}
+                  <div className="font-medium leading-tight">{jurisdiction.name}</div>
+                  <div className="text-xs font-normal text-muted-foreground mt-0.5">
+                    {jurisdiction.code}
+                  </div>
                 </TableHead>
               ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {issueTags.map((tag) => (
-              <TableRow key={tag.id}>
+              <TableRow key={tag.id} id={`issue-${tag.slug}`}>
                 <TableCell className="font-medium sticky left-0 bg-background">
                   <div>{tag.label}</div>
                   {tag.description && (
@@ -155,6 +163,11 @@ export function ComparisonMatrix({
                 </TableCell>
                 {jurisdictions.map((jurisdiction) => {
                   const key = cellKey(jurisdiction.id, tag.id);
+                  const hasRelevantInJurisdiction =
+                    jurisdictionHasRelevantInstrument.has(jurisdiction.id);
+                  const hasUntaggedInJurisdiction =
+                    (untaggedInstrumentsByJurisdiction.get(jurisdiction.id) ?? [])
+                      .length > 0;
                   return (
                     <TableCell
                       key={`${jurisdiction.id}-${tag.id}`}
@@ -167,6 +180,8 @@ export function ComparisonMatrix({
                         instruments={instrumentsByCell.get(key) ?? []}
                         canEdit={canEdit}
                         onEdit={setEditing}
+                        jurisdictionHasRelevantInstruments={hasRelevantInJurisdiction}
+                        jurisdictionHasUntaggedRelevant={hasUntaggedInJurisdiction}
                       />
                     </TableCell>
                   );
@@ -174,7 +189,7 @@ export function ComparisonMatrix({
               </TableRow>
             ))}
             {hasUntagged && (
-              <TableRow className="bg-muted/20">
+              <TableRow id="issue-untagged" className="bg-muted/20">
                 <TableCell className="font-medium sticky left-0 bg-background">
                   <div className="font-semibold text-amber-700 dark:text-amber-400">
                     Untagged
@@ -225,7 +240,7 @@ export function ComparisonMatrix({
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground italic">
-                          No data
+                          No untagged relevant bills
                         </span>
                       )}
                     </TableCell>
