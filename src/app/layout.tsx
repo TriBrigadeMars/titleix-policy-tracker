@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Title IX Policy Tracker",
   description: "Track proposed and passed laws impacting Title IX across the United States.",
+  openGraph: {
+    title: "Title IX Policy Tracker",
+    description: "Track proposed and passed laws impacting Title IX across the United States.",
+  },
 };
 
 export default function RootLayout({

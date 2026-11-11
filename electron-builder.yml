@@ -1,21 +1,83 @@
 appId: org.titleixpolicytracker.desktop
 productName: Title IX Policy Tracker
+publish: null
 
 directories:
   output: dist-desktop
   buildResources: build
 
 files:
-  # Only the compiled main/preload process code plus the offline fallback page
-  # (copied into electron-dist/ by desktop:copy-assets) ship. The Next.js app
-  # in src/, prisma/, .next/ and every .env* file stay out.
   - electron-dist/**/*
   - package.json
   - "!node_modules/**/*"
   - "!src/**/*"
+  - "!src-tauri/**/*"
+  - "!local-bundle/**/*"
   - "!prisma/**/*"
   - "!.next/**/*"
   - "!.env*"
+
+extraResources:
+  - from: local-bundle
+    to: local-bundle
+    filter:
+      - "**/*"
+      - "!.env*"
+  - from: build/icon.png
+    to: icon.png
+
+linux:
+  icon: build/icon.png
+  category: Office
+  synopsis: Track proposed and passed laws impacting Title IX across the United States.
+  maintainer: Title IX Policy Tracker Maintainers <maintainers@titleixpolicytracker.org>
+  executableName: titleix-policy-tracker
+  desktop:
+    entry:
+      Name: Title IX Policy Tracker
+      Comment: Track proposed and passed laws impacting Title IX across the United States.
+      Categories: Office;Education;Database;
+      StartupWMClass: titleix-policy-tracker
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: pacman
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+
+deb:
+  depends:
+    - libnotify4
+    - libsecret-1-0
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+
+rpm:
+  depends:
+    - libnotify
+    - libsecret
+    - nss
+    - libXScrnSaver
+    - libXtst
+    - xdg-utils
+
+pacman:
+  depends:
+    - gtk3
+    - libnotify
+    - libsecret
+    - nss
+    - libxss
+    - xdg-utils
 
 win:
   target:
@@ -29,4 +91,4 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Title IX Policy Tracker
 
-artifactName: "TitleIX-Policy-Tracker-Setup-${version}.${ext}"
+artifactName: "TitleIX-Policy-Tracker-${version}-${os}-${arch}.${ext}"

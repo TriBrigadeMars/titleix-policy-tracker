@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Title IX Policy Tracker",
+  "version": "1.0.0",
+  "identifier": "org.titleixpolicytracker.desktop",
+  "build": {
+    "frontendDist": "../electron"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Title IX Policy Tracker",
+        "url": "app://tracker/",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 700,
+        "maximized": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' app://tracker; style-src 'self' 'unsafe-inline' app://tracker; script-src 'self' 'unsafe-inline' app://tracker; img-src 'self' data: https: app://tracker; connect-src 'self' app://tracker"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage", "deb", "rpm"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../local-bundle/**/*": "local-bundle/"
+    },
+    "category": "Office",
+    "shortDescription": "Track proposed and passed laws impacting Title IX across the United States.",
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libsecret-1-0", "nodejs"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "libsecret", "nodejs"]
+      }
+    }
+  }
+}

@@ -4,9 +4,14 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "./db";
 import { DEFAULT_ROLE, isUserRole } from "./roles";
 
+const FALLBACK_AUTH_SECRET =
+  "titleix-policy-tracker-dev-fallback-secret-32chars";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [Google],
+  trustHost: true,
+  secret: process.env.AUTH_SECRET || FALLBACK_AUTH_SECRET,
   pages: {
     signIn: "/sign-in",
   },

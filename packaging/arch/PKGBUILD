@@ -1,0 +1,33 @@
+# Maintainer: Title IX Policy Tracker Maintainers
+pkgname=titleix-policy-tracker
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Standalone Title IX legislative & regulatory policy tracker (embedded PGlite + Rust/Tauri shell)"
+arch=('x86_64')
+url="https://github.com/TriBrigadeMars/titleix-policy-tracker"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'libsecret' 'nodejs' 'gtk3' 'hicolor-icon-theme')
+makedepends=('rust' 'cargo' 'npm')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/../.."
+  npm ci
+  npm run db:generate
+  npm run build
+  npm run desktop:stage-local
+  npx @tauri-apps/cli build --no-bundle
+}
+
+package() {
+  cd "$startdir/../.."
+  install -Dm755 "src-tauri/target/release/titleix-policy-tracker" \
+    "$pkgdir/usr/lib/titleix-policy-tracker/titleix-policy-tracker"
+  cp -r "local-bundle" "$pkgdir/usr/lib/titleix-policy-tracker/local-bundle"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/usr/lib/titleix-policy-tracker/titleix-policy-tracker" \
+    "$pkgdir/usr/bin/titleix-policy-tracker"
+  install -Dm644 "build/icon.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/org.titleixpolicytracker.desktop.png"
+}

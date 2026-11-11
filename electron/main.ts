@@ -3,6 +3,8 @@ import {
   BrowserWindow,
   dialog,
   Menu,
+  protocol,
+  safeStorage,
   screen,
   shell,
   type MenuItemConstructorOptions,
@@ -12,101 +14,150 @@ import * as path from "node:path";
 import {
   APP_ID,
   APP_NAME,
-  DESKTOP_DEFAULT_HEIGHT,
-  DESKTOP_DEFAULT_WIDTH,
   DESKTOP_MIN_HEIGHT,
   DESKTOP_MIN_WIDTH,
+  LOCAL_HOST,
+  LOCAL_SCHEME,
+  VERSION_ARG_PREFIX,
+  authAllowlistOrigins,
+  isLocalModeUrl,
   resolveAppUrl,
   urlOrigin,
-  authAllowlistOrigins,
 } from "./constants";
 import {
-  isBoundsVisibleOnAnyDisplay,
-  parseSavedBounds,
-  resolveInitialBounds,
-  type WindowBounds,
-} from "./window-state";
+  readEncryptedKeyringFallback,
+  readIngestKeysFromKeyring,
+} from "./keyring";
+import {
+  proxyCustomSchemeToSocket,
+  resolveShellConfigDir,
+  startManagedLocalServer,
+  type ManagedLocalServer,
+} from "./local-runtime";
 import {
   classifyUrl,
   createAuthFlowGuard,
   isNetworkError,
   isSafeExternalUrl,
 } from "./security";
+import { resolveInitialBounds, type WindowBounds } from "./window-state";
 
-// WP-09: single-instance lock
-
-// WP-09B: zoom clamp range enforced by the View menu
 export const MIN_ZOOM_FACTOR = 0.5;
 export const MAX_ZOOM_FACTOR = 3.0;
 const ZOOM_STEP = 0.1;
 
-/**
- * Step the zoom factor of a window by `delta`, clamped strictly to
- * [MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR]. Reads the current factor so repeated
- * accelerators accumulate exactly one step per press. Safe when the window is
- * destroyed (no-op).
- */
 export function adjustZoom(win: BrowserWindow, delta: number): void {
   if (win.isDestroyed()) {
     return;
   }
   const next = Math.min(
     MAX_ZOOM_FACTOR,
-    Math.max(MIN_ZOOM_FACTOR, win.webContents.getZoomFactor() + delta),
+    Math.max(MIN_ZOOM_FACTOR, win.webContents.getZoomFactor() + delta)
   );
   win.webContents.setZoomFactor(next);
 }
 
-/**
- * Zoom the window to the given factor, clamped strictly to the same range as
- * zoom in/out. Safe when the window is destroyed (no-op).
- */
 export function setZoom(win: BrowserWindow, factor: number): void {
   if (win.isDestroyed()) {
     return;
   }
   const clamped = Math.min(
     MAX_ZOOM_FACTOR,
-    Math.max(MIN_ZOOM_FACTOR, factor),
+    Math.max(MIN_ZOOM_FACTOR, factor)
   );
   win.webContents.setZoomFactor(clamped);
 }
 
-app.setAppUserModelId(APP_ID); // set BEFORE window creation
+// Register `app://` as a privileged standard scheme BEFORE `app.whenReady()` so
+// Fetch API, RSC streaming, relative URLs, and styles work identically to https.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: LOCAL_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
-const appOrigin = urlOrigin(resolveAppUrl(app.isPackaged));
+app.setAppUserModelId(APP_ID);
+
+// Defect D1 fix: enforce single-instance lock BEFORE starting the embedded
+// PGlite server or opening a window so two instances can never contend on the
+// local database directory or Unix domain socket.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 let mainWindow: BrowserWindow | null = null;
+let localServer: ManagedLocalServer | null = null;
 
-// WP-11: bundled offline fallback page (packaged next to main.js). The page
-// accepts `detail` and `target` parameters via query string or hash so it
-// can re-launch the original URL on retry.
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+    }
+  });
+}
+
+let resolvedTargetUrl: string | null = null;
+try {
+  resolvedTargetUrl = resolveAppUrl(app.isPackaged);
+} catch {
+  resolvedTargetUrl = null;
+}
+const appOrigin = resolvedTargetUrl ? urlOrigin(resolvedTargetUrl) : null;
+
 const OFFLINE_PAGE_FILE_NAME = "offline.html";
 const offlinePagePath = path.join(__dirname, OFFLINE_PAGE_FILE_NAME);
 
-/**
- * Load the packaged offline page into `win`, passing the URL that failed
- * and a human-readable error detail. If the offline page itself fails to
- * load we log and do not retry — otherwise the renderer would bounce
- * forever between the app origin and the offline page.
- */
 export function showOfflinePage(
   win: BrowserWindow,
   targetUrl: string,
-  detail: string,
+  detail: string
 ): Promise<void> {
   const params = new URLSearchParams({ detail, target: targetUrl });
   return win.loadFile(offlinePagePath, { hash: params.toString() });
 }
 
-/**
- * Build the native application menu. WP-09B adds the View submenu with zoom
- * clamping and full-screen controls. Menu item handlers resolve the window
- * from `mainWindow` at click time, and the template is rebuilt on
- * `browser-window-focus` (see `app.whenReady`) so accelerators keep working
- * after a loss/re-gain of focus (macOS drops F11 on blur).
- */
 function buildAppMenu(): Menu {
+  const helpSubmenu: MenuItemConstructorOptions[] = [];
+  if (appOrigin && isSafeExternalUrl(appOrigin)) {
+    helpSubmenu.push({
+      label: "Open Website",
+      click: () => {
+        if (isSafeExternalUrl(appOrigin)) {
+          void shell.openExternal(appOrigin);
+        }
+      },
+    });
+  }
+  helpSubmenu.push({
+    label: "About Title IX Policy Tracker",
+    click: () => {
+      const target = mainWindow;
+      if (target && !target.isDestroyed()) {
+        void dialog.showMessageBox(target, {
+          type: "info",
+          title: "About",
+          message: APP_NAME,
+          detail: [
+            `Version: ${app.getVersion()}`,
+            `Mode: ${localServer ? "Standalone Local (PGlite + UDS)" : "Hosted Web"}`,
+            `Platform: ${process.platform} (${process.arch})`,
+            `Electron: ${process.versions.electron}`,
+          ].join("\n"),
+        });
+      }
+    },
+  });
+
   const template: MenuItemConstructorOptions[] = [
     {
       label: "File",
@@ -182,34 +233,7 @@ function buildAppMenu(): Menu {
     },
     {
       label: "Help",
-      submenu: [
-        {
-          label: "Open Website",
-          click: () => {
-            if (appOrigin && isSafeExternalUrl(appOrigin)) {
-              shell.openExternal(appOrigin);
-            }
-          },
-        },
-        {
-          label: "About Title IX Policy Tracker",
-          click: () => {
-            const target = mainWindow;
-            if (target && !target.isDestroyed()) {
-              dialog.showMessageBox(target, {
-                type: "info",
-                title: "About",
-                message: APP_NAME,
-                detail: [
-                  `Version: ${app.getVersion()}`,
-                  `Electron: ${process.versions.electron}`,
-                  `Chrome: ${process.versions.chrome}`,
-                ].join("\n"),
-              });
-            }
-          },
-        },
-      ],
+      submenu: helpSubmenu,
     },
   ];
 
@@ -266,10 +290,74 @@ function saveWindowState(win: BrowserWindow): void {
   }
 }
 
+function resolveLinuxWindowIcon(): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  const candidates = [
+    path.join(process.resourcesPath, "icon.png"),
+    path.resolve(__dirname, "..", "build", "icon.png"),
+  ];
+  return candidates.find((p) => fs.existsSync(p));
+}
+
+function renderFatalErrorCard(
+  win: BrowserWindow,
+  heading: string,
+  body: string
+): void {
+  const escapedHeading = heading
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const escapedBody = body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const errorHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapedHeading}</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .card {
+      max-width: 500px;
+      padding: 32px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    h1 { margin-top: 0; font-size: 1.25rem; color: #dc2626; }
+    p { margin-bottom: 0; line-height: 1.5; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${escapedHeading}</h1>
+    <p>${escapedBody}</p>
+  </div>
+</body>
+</html>`;
+  void win.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`
+  );
+}
+
 function createMainWindow(): void {
   const savedRaw = readSavedBounds();
   const displays = screen.getAllDisplays().map((d) => d.bounds);
   const initialBounds = resolveInitialBounds(savedRaw, displays);
+  const linuxIcon = resolveLinuxWindowIcon();
 
   const win = new BrowserWindow({
     title: APP_NAME,
@@ -279,8 +367,10 @@ function createMainWindow(): void {
     y: initialBounds.y,
     minWidth: DESKTOP_MIN_WIDTH,
     minHeight: DESKTOP_MIN_HEIGHT,
+    ...(linuxIcon ? { icon: linuxIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      additionalArguments: [`${VERSION_ARG_PREFIX}${app.getVersion()}`],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -288,8 +378,6 @@ function createMainWindow(): void {
   });
 
   mainWindow = win;
-
-  // WP-09B: native application menu (View: reload, zoom, full screen)
   Menu.setApplicationMenu(buildAppMenu());
 
   if (initialBounds.maximized) {
@@ -321,23 +409,20 @@ function createMainWindow(): void {
     mainWindow = null;
   });
 
-  // WP-07: navigation lockdown
-  if (appOrigin === null) {
-    console.error("Fatal: app origin could not be resolved from app URL");
-  }
   const authOrigins = authAllowlistOrigins(appOrigin ?? "");
   const guard = createAuthFlowGuard();
 
-  // Mark the auth flow active when navigation to /sign-in begins, and
-  // inactive once the loaded URL is back on the app origin with a path
-  // other than /sign-in.
   const isSignInPath = (url: string): boolean => {
-    try {
-      const parsed = new URL(url);
-      return parsed.origin === appOrigin && parsed.pathname.startsWith("/sign-in");
-    } catch {
-      return false;
-    }
+    return (
+      urlOrigin(url) === appOrigin &&
+      (() => {
+        try {
+          return new URL(url).pathname.startsWith("/sign-in");
+        } catch {
+          return false;
+        }
+      })()
+    );
   };
 
   win.webContents.on("will-navigate", (_event, url) => {
@@ -347,58 +432,60 @@ function createMainWindow(): void {
   });
 
   win.webContents.on("did-navigate", (_event, url) => {
-    if (appOrigin !== null && url.startsWith(appOrigin) && !isSignInPath(url)) {
+    if (appOrigin !== null && urlOrigin(url) === appOrigin && !isSignInPath(url)) {
       guard.end();
     }
   });
 
   win.webContents.on("did-finish-load", () => {
     const url = win.webContents.getURL();
-    if (appOrigin !== null && url.startsWith(appOrigin) && !isSignInPath(url)) {
+    if (appOrigin !== null && urlOrigin(url) === appOrigin && !isSignInPath(url)) {
       guard.end();
     }
   });
 
   win.webContents.on("will-navigate", (event, url) => {
-    const action = classifyUrl(url, appOrigin ?? "", authOrigins, guard.isActive());
+    const action = classifyUrl(
+      url,
+      appOrigin ?? "",
+      authOrigins,
+      guard.isActive()
+    );
     if (action.kind === "ALLOW") {
-      // in-app navigation — allow
+      // Allow in-app navigation
     } else if (action.kind === "OPEN_EXTERNAL") {
       event.preventDefault();
       if (isSafeExternalUrl(url)) {
-        shell.openExternal(url);
+        void shell.openExternal(url);
       }
     } else {
-      // BLOCK
       event.preventDefault();
     }
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    const action = classifyUrl(url, appOrigin ?? "", authOrigins, guard.isActive());
+    const action = classifyUrl(
+      url,
+      appOrigin ?? "",
+      authOrigins,
+      guard.isActive()
+    );
     if (action.kind === "ALLOW") {
       return { action: "allow" };
     }
     if (action.kind === "OPEN_EXTERNAL") {
       if (isSafeExternalUrl(url)) {
-        shell.openExternal(url);
+        void shell.openExternal(url);
       }
       return { action: "deny" };
     }
-    // BLOCK or anything unclassifiable
     return { action: "deny" };
   });
 
-  // Defense in depth: the app doesn't use webviews; block them entirely.
   win.webContents.on("will-attach-webview", (event) => {
     event.preventDefault();
   });
 
-  // WP-11: network-class load failures on the main frame route to the
-  // packaged offline page so the user sees a recoverable error instead of
-  // a stuck blank window. Subframes and non-network failures are left
-  // alone — the app would otherwise swallow real HTTP 4xx/5xx responses
-  // and user-cancelled navigations.
   win.webContents.on(
     "did-fail-load",
     (
@@ -406,89 +493,100 @@ function createMainWindow(): void {
       errorCode,
       errorDesc,
       validatedURL,
-      isMainFrame,
-      _frameProcessId,
-      _frameRoutingId,
+      isMainFrame
     ) => {
-      if (!isMainFrame) {
-        return;
-      }
-      if (!isNetworkError(errorCode)) {
+      if (!isMainFrame || !isNetworkError(errorCode)) {
         return;
       }
       const detail = `${errorCode} ${errorDesc}`.trim();
       showOfflinePage(win, validatedURL, detail).catch((error) => {
         console.error("Failed to show offline page:", error);
       });
-    },
+    }
   );
-
-  // WP-11: offline handling
 
   try {
     const appUrl = resolveAppUrl(app.isPackaged);
-    win.loadURL(appUrl);
+    void win.loadURL(appUrl);
   } catch (error) {
     console.error("Fatal configuration error:", error);
-    const errorHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Configuration Error</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-      background: #f8fafc;
-      color: #0f172a;
-    }
-    .card {
-      max-width: 480px;
-      padding: 32px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      text-align: center;
-    }
-    h1 {
-      margin-top: 0;
-      font-size: 1.25rem;
-      color: #dc2626;
-    }
-    p {
-      margin-bottom: 0;
-      line-height: 1.5;
-      color: #475569;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Configuration Error</h1>
-    <p>Desktop application configuration is missing or invalid (DESKTOP_APP_URL). Please reinstall or contact support.</p>
-  </div>
-</body>
-</html>`;
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
+    renderFatalErrorCard(
+      win,
+      "Configuration Error",
+      "Desktop application configuration is invalid (DESKTOP_APP_URL must use https:// when overriding local mode)."
+    );
   }
 }
 
-app.whenReady().then(() => {
-  createMainWindow();
+if (gotSingleInstanceLock) {
+  app.whenReady().then(async () => {
+    if (resolvedTargetUrl && isLocalModeUrl(resolvedTargetUrl)) {
+      try {
+        const decrypt = safeStorage.isEncryptionAvailable()
+          ? (buf: Buffer) => safeStorage.decryptString(buf)
+          : null;
+        const fallback = readEncryptedKeyringFallback(
+          resolveShellConfigDir(),
+          decrypt
+        );
+        const keyringEnv = await readIngestKeysFromKeyring({ fallback });
 
-  // WP-09B: keep menu accelerators working when the window regains focus.
-  // macOS strips F11 when the app loses focus, so the menu template is
-  // rebuilt with the active window on every focus.
-  app.on("browser-window-focus", () => {
-    Menu.setApplicationMenu(buildAppMenu());
+        localServer = await startManagedLocalServer({
+          isPackaged: app.isPackaged,
+          resourcesPath: process.resourcesPath,
+          keyringEnv,
+        });
+
+        const activeServer = localServer;
+        protocol.handle(LOCAL_SCHEME, (request) => {
+          let parsed: URL;
+          try {
+            parsed = new URL(request.url);
+          } catch {
+            return new Response("Bad Request", { status: 400 });
+          }
+          if (parsed.hostname !== LOCAL_HOST || parsed.port !== "") {
+            return new Response("Forbidden", { status: 403 });
+          }
+          return proxyCustomSchemeToSocket(
+            request,
+            activeServer.socketPath,
+            activeServer.sessionToken
+          );
+        });
+      } catch (err) {
+        console.error("Failed to start local server:", err);
+        createMainWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          renderFatalErrorCard(
+            mainWindow,
+            "Local Database Startup Error",
+            "Could not initialize the local Title IX database or runtime socket. Verify permissions on $XDG_DATA_HOME/titleix-policy-tracker and $XDG_RUNTIME_DIR."
+          );
+        }
+        return;
+      }
+    }
+
+    createMainWindow();
+
+    app.on("browser-window-focus", () => {
+      Menu.setApplicationMenu(buildAppMenu());
+    });
   });
-});
 
-app.on("window-all-closed", () => {
-  app.quit();
-});
+  app.on("before-quit", (event) => {
+    if (localServer) {
+      const toStop = localServer;
+      localServer = null;
+      event.preventDefault();
+      toStop.stop().finally(() => {
+        app.quit();
+      });
+    }
+  });
+
+  app.on("window-all-closed", () => {
+    app.quit();
+  });
+}

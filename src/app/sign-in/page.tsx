@@ -29,6 +29,9 @@ export default async function SignInPage({
 
   async function signInWithGoogle() {
     "use server";
+    if (!process.env.AUTH_GOOGLE_ID || !process.env.AUTH_GOOGLE_SECRET) {
+      redirect("/sign-in?error=Configuration");
+    }
     await signIn("google", { redirectTo: "/" });
   }
 

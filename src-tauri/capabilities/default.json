@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal desktop capabilities: no IPC commands exposed to web content; external links open via Rust navigation handler.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

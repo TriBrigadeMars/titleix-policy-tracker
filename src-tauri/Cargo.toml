@@ -1,0 +1,30 @@
+[package]
+name = "titleix-policy-tracker"
+version = "1.0.0"
+description = "Standalone desktop shell for Title IX Policy Tracker (embedded PGlite over Unix domain socket)"
+authors = ["Title IX Policy Tracker Maintainers"]
+license = "MIT"
+repository = "https://github.com/TriBrigadeMars/titleix-policy-tracker"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "titleix_policy_tracker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+dirs = "5"
+hex = "0.4"
+http = "1"
+keyring = { version = "3", features = ["sync-secret-service", "apple-native", "windows-native"] }
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["io-util", "net", "process", "rt-multi-thread", "time"] }
+url = "2"

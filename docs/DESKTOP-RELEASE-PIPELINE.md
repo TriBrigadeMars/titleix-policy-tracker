@@ -1,41 +1,31 @@
-# WP-15B — Deferred: Release pipeline & clean-VM lifecycle testing
+# WP-15B & WP-16 — Desktop Release Pipeline & Local Bundled Runtime
 
-Backlog record of workplan **WP-15B**. Context: read `desktop-workplans/00-PROJECT-CONTEXT.md` first (referenced from `electron/README.md`; it lives with the workplans, not in this repo).
+Context: see [`docs/DESKTOP-LOCAL-AND-RUST.md`](./DESKTOP-LOCAL-AND-RUST.md) and [`electron/README.md`](../electron/README.md).
 
-- **Prerequisite:** WP-14B complete and approved by the maintainer.
-- **Status:** Backlog specification only. **Not implemented — do not implement during Phase 1.**
+## Deferred Item 3 — CI/CD release pipeline (Linux + Windows)
 
-## Deferred Item 3 — CI/CD release pipeline
-
-Recommended Windows runner pipeline:
+Linux packaging and verification run in [`.github/workflows/desktop-linux.yml`](../.github/workflows/desktop-linux.yml):
 
 ```
-checkout → npm ci → prisma generate → lint → typecheck (both configs)
-→ unit tests → next build → desktop:compile → electron-builder
-→ sign artifacts → archive installer (+ latest.yml, checksums)
+checkout → npm ci → prisma generate → lint → typecheck (web + desktop)
+→ vitest → next build → stage-local-bundle → desktop:compile → electron-builder
+→ secret-free bundle audit → upload AppImage + pacman + deb + rpm
 ```
 
-Tagged releases publish `TitleIX-Policy-Tracker-Setup-x.y.z.exe` (matching the `artifactName` in `electron-builder.yml`). "Typecheck (both configs)" means `npm run typecheck` (web, `tsconfig.json`) and `npm run desktop:typecheck` (Electron, `electron/tsconfig.json`). The `sign artifacts` stage depends on WP-15A Deferred Item 1 and must not land before signing credentials exist as CI secrets.
+A parallel job compiles and tests (`cargo test`) the Rust/Tauri v2 shell in `src-tauri/` and builds its AppImage, `.deb`, and `.rpm` artifacts.
 
-## Deferred Item 4 — Clean-Windows installer lifecycle test
+## Deferred Item 4 — Clean-VM / distro lifecycle verification
 
-- Run testing on a fresh Windows 11 VM as a standard (non-admin) user.
-- Lifecycle: download → install → Start Menu launch → desktop shortcut → authenticate → close → reopen (session persistence) → upgrade → uninstall.
+- **Linux targets**: Arch (`pacman` / `PKGBUILD`), Ubuntu (`deb`), Fedora (`rpm`), and universal downloadable `AppImage`.
+- **Windows target**: NSIS installer (`TitleIX-Policy-Tracker-<version>-win-x64.exe`).
+- Lifecycle: install or `chmod +x *.AppImage` → launch offline with no TCP port open (`ss -tlnp` shows zero app listeners) → browse seeded corpus → edit cell notes & triage instruments → restart and confirm persistence in `$XDG_DATA_HOME/titleix-policy-tracker/pgdata`.
 
-The WP-14 functional smoke items in `docs/DESKTOP-AUDIT.md` are all `PENDING-ENV` and cover part of this surface interactively; this item supersedes them with a clean-VM pass once a release pipeline exists to download from.
+## WP-16 — Reversal of Deferred Item 5 (Standalone Local Mode Approved, 2026-11-11)
 
-## Deferred Item 5 — Bundled server "Enterprise Edition" (rejected for v1)
-
-Packaging the Next.js server and database inside the client executable would leak `DATABASE_URL` and API secrets. Only evaluate in a future self-hosted model where customers supply their own infrastructure. The WP-14 asar audit confirms the current `electron-builder.yml` `files:` block already excludes `src/`, `prisma/`, `.next/`, and every `.env*` — keep it that way.
-
-## Phase 2 future git & PR workflow (reference only)
-
-When implementing CI/CD pipelines:
-
-1. Create a dedicated branch: `git checkout -b desktop/phase2-ci-pipeline`
-2. Commit workflows under `.github/workflows/`: `git commit -m "ci(desktop): add Windows electron-builder release workflow"`
-3. Push and submit PR:
-
-   ```bash
-   gh pr create --base main --head desktop/phase2-ci-pipeline --title "ci(desktop): Windows Release Pipeline" --body "Adds GitHub Actions release workflow for building and packaging the Windows desktop shell."
-   ```
+> **Historical note (Deferred Item 5, originally rejected for v1):** Packaging a hosted Next.js server with embedded `DATABASE_URL` and shared API keys would leak credentials inside `app.asar`.
+>
+> **WP-16 Decision (2026-11-11):** Reversed for **standalone local mode**. Local mode bundles the Next.js standalone server (`local-bundle/`) and embedded **PGlite** WASM runtime, shipping **zero secrets**:
+> 1. Database state lives exclusively on the user's disk under `$XDG_DATA_HOME/titleix-policy-tracker/pgdata` (`0700`), initialized from checked-in `prisma/migrations` and `prisma/fixtures/demo-corpus.json`.
+> 2. No Google OAuth credentials ship; the shell provisions a single local `ADMIN` session and injects the per-launch session cookie over a `0700`-scoped Unix domain socket (`$XDG_RUNTIME_DIR/titleix-policy-tracker/app.sock`).
+> 3. Optional ingest API keys (`CONGRESS_GOV_API_KEY`, `OPEN_STATES_API_KEY`, `LEGISCAN_API_KEY`) are supplied by the user in their OS keyring (`org.titleixpolicytracker.desktop`) and passed via child environment at spawn.
+> 4. Both `electron-builder.yml` and `scripts/stage-local-bundle.ts` continue to exclude all `.env*` files.

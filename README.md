@@ -4,80 +4,86 @@ Track proposed and passed laws impacting Title IX across the United States.
 
 ## Overview
 
-A legislative/regulatory impact tracker for researchers, advocates, and journalists. Compare proposed or recently passed laws, regulations, and policies at the state and federal level that can impact Title IX.
+A legislative and regulatory impact tracker for researchers, advocates, and journalists. Compare proposed or recently passed laws, regulations, and policies at the state and federal level that impact Title IX.
 
-## Quick Start
+Runs in two modes from the same codebase:
+- **Hosted web app**: Next.js 15 App Router + PostgreSQL + Google OAuth (`npm run dev` / `npm run build`).
+- **Standalone desktop app** (Linux AppImage, Arch, Ubuntu, Fedora, Windows): embedded PGlite database in `$XDG_DATA_HOME/titleix-policy-tracker/`, custom `app://tracker` scheme over a `0700` Unix domain socket (`$XDG_RUNTIME_DIR/titleix-policy-tracker/app.sock`), single local user, no TCP port, no hosted server, and OS keyring ingest keys — with both Electron (`electron/`) and Rust/Tauri v2 (`src-tauri/`) shells.
 
-Requires **Node 22** (see `.nvmrc`) and **PostgreSQL 16** (the version used in CI).
-Ingest API keys (`CONGRESS_GOV_API_KEY`, `OPEN_STATES_API_KEY`, `LEGISCAN_API_KEY`)
-are optional and only needed to run the admin ingest triggers.
+## Quick Start (Linux & macOS — POSIX bash/zsh)
 
-```powershell
-# Clone and enter the repository (all commands below assume this directory)
+Requires **Node >= 22** (tested on Node 22 LTS through Node 26). For the hosted web mode with external PostgreSQL, **PostgreSQL 16+** is used in CI; without `DATABASE_URL`, the dev server automatically boots an embedded in-memory PGlite instance seeded with the demo corpus.
+
+```bash
+# Clone and enter the repository
 git clone https://github.com/TriBrigadeMars/titleix-policy-tracker.git
-Set-Location .\titleix-policy-tracker
+cd titleix-policy-tracker
 
-# Install dependencies from the lockfile
+# Install dependencies
 npm ci
 
-# Set up environment
-Copy-Item .env.example .env
-# Edit .env with your database URL and Google OAuth credentials.
+# Copy environment template (edit .env if connecting external Postgres & Google OAuth)
+cp .env.example .env
 
-# Generate Prisma client and run migrations
+# Generate Prisma client
 npm run db:generate
-npm run db:migrate
 
-# Seed jurisdictions and issue tags
-npm run db:seed
+# Optional: if using external PostgreSQL in .env, apply migrations and seed
+# npm run db:migrate && npm run db:seed
 
-# Start dev server
+# Start web development server on http://localhost:3000
 npm run dev
 ```
 
-If a later command reports that it cannot find `package.json`, you are not in the
-repository root. Verify with:
+<details>
+<summary>Windows PowerShell Quick Start</summary>
 
 ```powershell
-Test-Path .\package.json
+git clone https://github.com/TriBrigadeMars/titleix-policy-tracker.git
+Set-Location .\titleix-policy-tracker
+npm ci
+Copy-Item .env.example .env
+npm run db:generate
+npm run dev
+```
+</details>
+
+## Standalone Linux Desktop & AppImage
+
+See [docs/DESKTOP-LOCAL-AND-RUST.md](./docs/DESKTOP-LOCAL-AND-RUST.md) for full details on Arch (`pacman` / `PKGBUILD`), Ubuntu (`deb`), Fedora (`rpm`), keyring setup (`secret-tool`), and the Rust/Tauri v2 shell.
+
+```bash
+# Build downloadable standalone AppImage (dist-desktop/*.AppImage)
+npm run desktop:dist:appimage
+
+# Build AppImage + Arch (.pacman) + Ubuntu (.deb) + Fedora (.rpm)
+npm run desktop:dist:linux
+
+# Build with the Rust / Tauri v2 shell
+npm run tauri:build
 ```
 
 ## Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Production build |
+| `npm run dev` | Start web development server (`0.0.0.0:3000`) |
+| `npm run build` | Production Next.js standalone build |
 | `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript check |
+| `npm run typecheck` | TypeScript check (web + local runtime) |
+| `npm run desktop:typecheck` | TypeScript check (`electron/tsconfig.json`) |
+| `npm test` | Run the Vitest unit & local-runtime suite |
 | `npm run db:generate` | Generate Prisma client |
-| `npm run db:migrate` | Run database migrations |
-| `npm run db:studio` | Open Prisma Studio |
-| `npm run db:seed` | Seed jurisdictions and issue tags |
-| `npm test` | Run the Vitest suite |
+| `npm run db:migrate` | Run database migrations against `DATABASE_URL` |
+| `npm run db:seed` | Seed jurisdictions, issue tags, and demo corpus |
+| `npm run desktop:dist:appimage` | Build standalone Linux AppImage |
+| `npm run desktop:dist:linux` | Build Linux AppImage, `pacman`, `deb`, and `rpm` packages |
+| `npm run tauri:build` | Build standalone Rust/Tauri v2 desktop bundles |
+| `npm run desktop:gate` | Evaluate Electron → Rust shell size/startup/RSS gate |
 
-## Architecture
+## Architecture & Status
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for domain model, design decisions, and data flow.
-
-## Status
-
-Completed:
-
-- Signed-in comparison matrix with cell notes (read + write), anonymously readable at `/`
-- Editor triage and instrument notes
-- 50-state heatmap, anonymously readable at `/heatmap`
-- Admin user-role management
-- Ingest pipeline: Congress.gov federal bills plus LegiScan and OpenStates state bills, behind admin-only trigger routes that upsert on `(jurisdictionId, type, identifier)` and refresh source-owned lifecycle status on every run
-
-Remaining:
-
-- Typed, source-specific ingest contracts and batch/iterable persistence
-- Broader Postgres-backed integration tests for the auth guards (mocked today)
-
-## Status and contributing
-
-- [docs/PROGRESS.md](./docs/PROGRESS.md) — what has shipped and what has not
-- [docs/ORCHESTRATOR.md](./docs/ORCHESTRATOR.md) — frontier orchestrator prompt, thermo-nuclear quality bar, and the required flash subagent template
-
-This project uses an orchestrator + flash worker model. The orchestrator owns design and review. Flash workers only get fully specified, repetitive tasks.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — domain model, design decisions, and authz invariants
+- [docs/DESKTOP-LOCAL-AND-RUST.md](./docs/DESKTOP-LOCAL-AND-RUST.md) — standalone local mode (`app://tracker` → UDS → PGlite), Linux packages, and Rust shell
+- [docs/PROGRESS.md](./docs/PROGRESS.md) — completed slices and review history
+- [docs/ORCHESTRATOR.md](./docs/ORCHESTRATOR.md) — code quality bar and subagent protocol

@@ -37,6 +37,9 @@
   "exclude": [
     "node_modules",
     "electron",
-    "electron-dist"
+    "electron-dist",
+    "dist-desktop",
+    "local-bundle",
+    "src-tauri"
   ]
 }
