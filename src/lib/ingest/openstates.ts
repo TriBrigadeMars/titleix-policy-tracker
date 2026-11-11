@@ -106,6 +106,9 @@ export const openStatesAdapter: IngestAdapter = {
     if (opts?.session !== undefined && opts.session !== "") {
       params.set("session", String(opts.session));
     }
+    if (opts?.page !== undefined && Number(opts.page) > 1) {
+      params.set("page", String(opts.page));
+    }
 
     const url = `${OPEN_STATES_BILLS_URL}?${params.toString()}`;
     const apiKey = process.env.OPEN_STATES_API_KEY;

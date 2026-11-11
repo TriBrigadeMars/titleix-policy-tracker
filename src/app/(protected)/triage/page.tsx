@@ -3,6 +3,7 @@ import {
   getInstrumentsForTriage,
   getIssueTags,
   getJurisdictions,
+  getTriageQueueCounts,
 } from "@/lib/queries";
 import { requirePageRole } from "@/lib/auth-guards";
 import { parseTriageQuery } from "@/lib/search-params";
@@ -30,10 +31,11 @@ export default async function TriagePage({
 
   const filters = parseTriageQuery(urlParams);
 
-  const [jurisdictions, issueTags, instruments] = await Promise.all([
+  const [jurisdictions, issueTags, instruments, queueCounts] = await Promise.all([
     getJurisdictions(),
     getIssueTags(),
     getInstrumentsForTriage(filters),
+    getTriageQueueCounts(),
   ]);
 
   return (
@@ -42,6 +44,7 @@ export default async function TriagePage({
       issueTags={issueTags}
       initialInstruments={instruments}
       filters={filters}
+      queueCounts={queueCounts}
     />
   );
 }

@@ -16,6 +16,7 @@ import {
 import { InstrumentTriageEditor } from "@/components/instrument-triage-editor";
 import { formatDate } from "@/lib/format-date";
 import type { TriageQuery } from "@/lib/search-params";
+import type { TriageQueueCounts } from "@/lib/queries";
 import { triageStatus } from "@/lib/triage";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import type { Instrument, IssueTag, Jurisdiction } from "@/types";
@@ -25,6 +26,7 @@ interface TriageDashboardProps {
   issueTags: IssueTag[];
   initialInstruments: Instrument[];
   filters: TriageQuery;
+  queueCounts: TriageQueueCounts;
 }
 
 export function TriageDashboard({
@@ -32,6 +34,7 @@ export function TriageDashboard({
   issueTags,
   initialInstruments,
   filters,
+  queueCounts,
 }: TriageDashboardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -60,10 +63,18 @@ export function TriageDashboard({
   }
 
   function handleInstrumentSaved(updated: Instrument) {
+    const index = instruments.findIndex((inst) => inst.id === updated.id);
+    const next = index >= 0 ? instruments[index + 1] ?? null : null;
+    setInstruments((prev) => prev.filter((inst) => inst.id !== updated.id));
+    setEditingInstrument(next);
+    router.refresh();
+  }
+
+  function handleInstrumentUpdated(updated: Instrument) {
     setInstruments((prev) =>
       prev.map((inst) => (inst.id === updated.id ? updated : inst))
     );
-    router.refresh();
+    setEditingInstrument(updated);
   }
 
   return (
@@ -74,6 +85,26 @@ export function TriageDashboard({
           <p className="text-muted-foreground mt-1">
             Review ingested legislation and regulations, tag Title IX relevance, and assign matrix issue tags.
           </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={filters.relevance === "unreviewed" ? "default" : "outline"}
+            onClick={() => updateFilter({ relevance: "unreviewed" })}
+          >
+            Unreviewed ({queueCounts.unreviewed})
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={
+              filters.relevance === "relevant_untagged" ? "default" : "outline"
+            }
+            onClick={() => updateFilter({ relevance: "relevant_untagged" })}
+          >
+            Relevant, untagged ({queueCounts.relevantUntagged})
+          </Button>
         </div>
       </div>
 
@@ -102,6 +133,7 @@ export function TriageDashboard({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unreviewed">Unreviewed (Needs Triage)</SelectItem>
+                  <SelectItem value="relevant_untagged">Relevant, untagged</SelectItem>
                   <SelectItem value="relevant">Title IX Relevant</SelectItem>
                   <SelectItem value="not_relevant">Not Relevant</SelectItem>
                   <SelectItem value="all">All Instruments</SelectItem>
@@ -327,10 +359,13 @@ export function TriageDashboard({
           issueTags={issueTags}
           isOpen={true}
           onClose={() => setEditingInstrument(null)}
-          onSaved={(updated) => {
-            handleInstrumentSaved(updated);
-            setEditingInstrument(updated);
-          }}
+          hasNext={
+            instruments.findIndex((i) => i.id === editingInstrument.id) >= 0 &&
+            instruments.findIndex((i) => i.id === editingInstrument.id) <
+              instruments.length - 1
+          }
+          onSaved={handleInstrumentSaved}
+          onUpdated={handleInstrumentUpdated}
         />
       )}
     </main>

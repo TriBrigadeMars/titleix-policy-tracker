@@ -15,6 +15,8 @@ interface MatrixCellProps {
   instruments: Instrument[];
   canEdit: boolean;
   onEdit: (target: CellNoteTarget) => void;
+  jurisdictionHasRelevantInstruments: boolean;
+  jurisdictionHasUntaggedRelevant: boolean;
 }
 
 export function MatrixCell({
@@ -24,7 +26,22 @@ export function MatrixCell({
   instruments,
   canEdit,
   onEdit,
+  jurisdictionHasRelevantInstruments,
+  jurisdictionHasUntaggedRelevant,
 }: MatrixCellProps) {
+  const emptyLabel = (() => {
+    if (!jurisdictionHasRelevantInstruments) {
+      return "No relevant instruments in this jurisdiction yet";
+    }
+    if (jurisdictionHasUntaggedRelevant) {
+      return "Relevant bills are untagged for this issue (see Untagged row)";
+    }
+    if (instruments.length > 0) {
+      return "No editor comparison note yet";
+    }
+    return "Nothing relevant tagged for this issue";
+  })();
+
   return (
     <div className="flex items-start gap-2">
       <div className="min-w-0 flex-1 space-y-2">
@@ -70,7 +87,15 @@ export function MatrixCell({
         )}
 
         {!note && instruments.length === 0 && (
-          <span className="text-xs text-muted-foreground italic">No data</span>
+          <span className="text-xs text-muted-foreground italic">
+            {emptyLabel}
+          </span>
+        )}
+
+        {!note && instruments.length > 0 && (
+          <span className="text-xs text-muted-foreground italic block mt-1">
+            No editor comparison note yet
+          </span>
         )}
       </div>
 
@@ -82,14 +107,14 @@ export function MatrixCell({
           className="h-7 w-7 shrink-0 text-muted-foreground"
           aria-label={
             note
-              ? `Edit note for ${issueTag.label} in ${jurisdiction.code}`
-              : `Add note for ${issueTag.label} in ${jurisdiction.code}`
+              ? `Edit note for ${issueTag.label} in ${jurisdiction.name}`
+              : `Add note for ${issueTag.label} in ${jurisdiction.name}`
           }
           onClick={() =>
             onEdit({
               jurisdictionId: jurisdiction.id,
               issueTagId: issueTag.id,
-              jurisdictionLabel: jurisdiction.code,
+              jurisdictionLabel: jurisdiction.name,
               issueLabel: issueTag.label,
               note: note ?? null,
             })

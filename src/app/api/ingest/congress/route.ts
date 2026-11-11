@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guards";
-import { upsertInstruments } from "@/lib/ingest";
 import { congressAdapter } from "@/lib/ingest/congress";
+import { runIngest } from "@/lib/ingest/pipeline";
 import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
 const MAX_INGEST_LIMIT = 100;
@@ -30,8 +30,9 @@ export async function POST(request: Request) {
   );
 
   try {
-    const rows = await congressAdapter.fetch({ congress, limit });
-    const result = await upsertInstruments(rows);
+    const result = await runIngest(congressAdapter.name, () =>
+      congressAdapter.fetch({ congress, limit })
+    );
     return NextResponse.json({
       source: congressAdapter.name,
       ...result,

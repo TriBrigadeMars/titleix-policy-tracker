@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PublicDataFreshness } from "@/components/public-data-freshness";
+import type { PublicFreshness } from "@/lib/queries";
 import type { HeatmapSummary } from "@/types";
 
 /**
@@ -214,8 +216,10 @@ function Legend({ maxCount }: LegendProps) {
 
 export function StateHeatmap({
   summaries,
+  freshness,
 }: {
   summaries: HeatmapSummary[];
+  freshness: PublicFreshness;
 }) {
   const [hovered, setHovered] = useState<HeatmapSummary | null>(null);
 
@@ -273,6 +277,8 @@ export function StateHeatmap({
           </CardContent>
         </Card>
       </div>
+
+      <PublicDataFreshness freshness={freshness} />
     </main>
   );
 }

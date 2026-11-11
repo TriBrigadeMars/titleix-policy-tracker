@@ -90,6 +90,32 @@ model Jurisdiction {
   @@map("jurisdictions")
 }
 
+enum IngestRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+
+  @@map("ingest_run_status")
+}
+
+/// One adapter invocation (admin POST or the scheduled job). Freshness on the
+/// public pages reads the latest successful row, not a guess from instrument
+/// timestamps. Retrying ingest creates a new run; instrument rows stay unique.
+model IngestRun {
+  id         String          @id @default(cuid())
+  source     String
+  status     IngestRunStatus @default(RUNNING)
+  startedAt  DateTime        @default(now()) @map("started_at")
+  finishedAt DateTime?       @map("finished_at")
+  upserted   Int             @default(0)
+  skipped    Int             @default(0)
+  dropped    Int             @default(0)
+  errorClass String?         @map("error_class")
+
+  @@index([status, finishedAt])
+  @@map("ingest_runs")
+}
+
 enum JurisdictionLevel {
   FEDERAL
   STATE

@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { auth, fetch, upsertInstruments } = vi.hoisted(() => ({
+const { auth, fetch, runIngest } = vi.hoisted(() => ({
   auth: vi.fn(),
   fetch: vi.fn(),
-  upsertInstruments: vi.fn(),
+  runIngest: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth }));
 vi.mock("@/lib/ingest/openstates", () => ({
   openStatesAdapter: { name: "openstates", fetch },
 }));
-vi.mock("@/lib/ingest", () => ({ upsertInstruments }));
+vi.mock("@/lib/ingest/pipeline", () => ({ runIngest }));
 
 import { POST } from "./route";
 
@@ -49,7 +49,16 @@ const base = "http://localhost/api/ingest/openstates";
 beforeEach(() => {
   vi.clearAllMocks();
   fetch.mockResolvedValue([]);
-  upsertInstruments.mockResolvedValue({ total: 0, upserted: 0, skipped: 0 });
+  runIngest.mockImplementation(async (_source: string, fetchRows: () => Promise<unknown[]>) => {
+    const rows = await fetchRows();
+    return {
+      total: rows.length,
+      upserted: rows.length,
+      skipped: 0,
+      dropped: 0,
+      runId: "run-1",
+    };
+  });
 });
 
 describe("POST /api/ingest/openstates — authorization", () => {
@@ -90,8 +99,6 @@ describe("POST /api/ingest/openstates — ADMIN", () => {
         rawSummary: null,
       },
     ]);
-    upsertInstruments.mockResolvedValue({ total: 1, upserted: 1, skipped: 0 });
-
     const response = await POST(
       post(`${base}?jurisdiction=nc&session=2023&limit=10`)
     );
@@ -103,6 +110,8 @@ describe("POST /api/ingest/openstates — ADMIN", () => {
       total: 1,
       upserted: 1,
       skipped: 0,
+      dropped: 0,
+      runId: "run-1",
       limit: 10,
     });
   });
@@ -130,7 +139,7 @@ describe("POST /api/ingest/openstates — ADMIN", () => {
 
   it("returns a generic 502 without leaking the upstream error", async () => {
     signIn(ADMIN);
-    fetch.mockRejectedValue(new Error("upstream down"));
+    runIngest.mockRejectedValue(new Error("upstream down"));
     const response = await POST(post(`${base}?jurisdiction=nc`));
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({

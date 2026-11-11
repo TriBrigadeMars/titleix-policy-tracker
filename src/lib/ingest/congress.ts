@@ -82,7 +82,11 @@ export const congressAdapter: IngestAdapter = {
   async fetch(opts) {
     const congress = opts?.congress ?? 119;
     const limit = opts?.limit ?? 50;
+    const offset = opts?.offset ?? 0;
     let url = `${CONGRESS_GOV_BILLS_URL}?congress=${congress}&limit=${limit}`;
+    if (Number(offset) > 0) {
+      url += `&offset=${Number(offset)}`;
+    }
     const apiKey = process.env.CONGRESS_GOV_API_KEY;
     if (!apiKey) {
       // Fail closed: without a key the request would be anonymous and may be

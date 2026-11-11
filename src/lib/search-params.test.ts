@@ -88,6 +88,14 @@ describe("parseTriageQuery", () => {
     });
   });
 
+  it("parses the relevant-untagged queue", () => {
+    expect(
+      parseTriageQuery(
+        new URLSearchParams({ relevance: "relevant_untagged" })
+      ).relevance
+    ).toBe("relevant_untagged");
+  });
+
   it("parses valid filters", () => {
     expect(
       parseTriageQuery(

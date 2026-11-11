@@ -75,6 +75,7 @@ export type TriageRelevanceFilter =
   | "all"
   | "unreviewed"
   | "relevant"
+  | "relevant_untagged"
   | "not_relevant";
 
 export interface TriageQuery {
@@ -105,6 +106,7 @@ const VALID_RELEVANCE = new Set([
   "all",
   "unreviewed",
   "relevant",
+  "relevant_untagged",
   "not_relevant",
 ]);
 

@@ -193,8 +193,21 @@ describe("congressAdapter.fetch", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("congress=119");
     expect(url).toContain("limit=20");
+    expect(url).not.toContain("offset=");
     expect(url).toContain("api_key=test-key");
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("adds offset when paging", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(completeBill),
+    });
+
+    await congressAdapter.fetch({ congress: 119, limit: 50, offset: 50 });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("offset=50");
   });
 
   it("throws on a non-ok response", async () => {
