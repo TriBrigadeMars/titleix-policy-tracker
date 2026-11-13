@@ -2,16 +2,18 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "./db";
+import { resolveAuthSecret } from "./auth-secret";
 import { DEFAULT_ROLE, isUserRole } from "./roles";
-
-const FALLBACK_AUTH_SECRET =
-  "titleix-policy-tracker-dev-fallback-secret-32chars";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [Google],
   trustHost: true,
-  secret: process.env.AUTH_SECRET || FALLBACK_AUTH_SECRET,
+  secret: resolveAuthSecret({
+    authSecret: process.env.AUTH_SECRET,
+    nodeEnv: process.env.NODE_ENV,
+    nextPhase: process.env.NEXT_PHASE,
+  }),
   pages: {
     signIn: "/sign-in",
   },

@@ -243,6 +243,11 @@ checked-in migration must apply.
 ## Security
 
 - OAuth via Google (NextAuth.js)
+- `AUTH_SECRET` comes from `resolveAuthSecret` (`src/lib/auth-secret.ts`).
+  The committed `DEV_ONLY_AUTH_SECRET` is used only outside production and
+  during `next build`; a production server with no `AUTH_SECRET` throws on
+  the first request that loads `src/lib/auth.ts`. The desktop shells and
+  `scripts/local-server.ts` generate a random secret per launch.
 - Sessions are stored in the database via the Prisma adapter, so role changes
   take effect immediately (no stale JWT to wait out).
 - `security-review` agent audit required after any auth-related PR
