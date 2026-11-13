@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Title IX Policy Tracker",
         "url": "app://tracker/",
         "width": 1400,
