@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { congressAdapter, mapCongressBills } from "./congress";
+import {
+  congressAdapter,
+  congressStatusFromLatestAction,
+  mapCongressBills,
+  ordinal,
+} from "./congress";
 
 const completeBill = {
   congress: 110,
@@ -20,6 +25,75 @@ const completeBill = {
 function response(...bills: unknown[]) {
   return { bills };
 }
+
+describe("ordinal", () => {
+  it("formats ordinal suffixes correctly", () => {
+    expect(ordinal(1)).toBe("1st");
+    expect(ordinal(2)).toBe("2nd");
+    expect(ordinal(3)).toBe("3rd");
+    expect(ordinal(4)).toBe("4th");
+    expect(ordinal(11)).toBe("11th");
+    expect(ordinal(12)).toBe("12th");
+    expect(ordinal(13)).toBe("13th");
+    expect(ordinal(21)).toBe("21st");
+    expect(ordinal(101)).toBe("101st");
+    expect(ordinal(111)).toBe("111th");
+    expect(ordinal(119)).toBe("119th");
+    expect(ordinal(121)).toBe("121st");
+  });
+});
+
+describe("congressStatusFromLatestAction", () => {
+  it("maps 'Became Public Law' to PASSED with passedAt flag (case-insensitive)", () => {
+    expect(
+      congressStatusFromLatestAction("Became Public Law No: 118-5.")
+    ).toEqual({ status: "PASSED", passedAt: "use-action-date" });
+    expect(
+      congressStatusFromLatestAction("became public law no: 118-5.")
+    ).toEqual({ status: "PASSED", passedAt: "use-action-date" });
+  });
+
+  it("maps 'Vetoed by President' and 'Pocket vetoed' to VETOED (case-insensitive)", () => {
+    expect(
+      congressStatusFromLatestAction("Vetoed by President.")
+    ).toEqual({ status: "VETOED" });
+    expect(
+      congressStatusFromLatestAction("vetoed by president.")
+    ).toEqual({ status: "VETOED" });
+    expect(
+      congressStatusFromLatestAction("Pocket vetoed by President.")
+    ).toEqual({ status: "VETOED" });
+    expect(
+      congressStatusFromLatestAction("pocket vetoed.")
+    ).toEqual({ status: "VETOED" });
+  });
+
+  it("maps 'Failed of passage' to FAILED (case-insensitive)", () => {
+    expect(
+      congressStatusFromLatestAction("Failed of passage in Senate.")
+    ).toEqual({ status: "FAILED" });
+    expect(
+      congressStatusFromLatestAction(
+        "On passage: Failed of passage by the Yeas and Nays."
+      )
+    ).toEqual({ status: "FAILED" });
+    expect(
+      congressStatusFromLatestAction("failed of passage.")
+    ).toEqual({ status: "FAILED" });
+  });
+
+  it("maps undefined and unrelated strings to PROPOSED", () => {
+    expect(congressStatusFromLatestAction(undefined)).toEqual({
+      status: "PROPOSED",
+    });
+    expect(
+      congressStatusFromLatestAction("Referred to the Committee on the Judiciary.")
+    ).toEqual({ status: "PROPOSED" });
+    expect(congressStatusFromLatestAction("")).toEqual({
+      status: "PROPOSED",
+    });
+  });
+});
 
 describe("mapCongressBills", () => {
   it("maps a complete bill to the exact RawInstrument shape", () => {
@@ -130,6 +204,28 @@ describe("mapCongressBills", () => {
     });
   });
 
+  it("drops a bill from another congress when requestedCongress is specified", () => {
+    const bill118 = { ...completeBill, congress: 118, number: "1" };
+    const bill119 = { ...completeBill, congress: 119, number: "2" };
+    const rows = mapCongressBills(response(bill118, bill119), 119);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].identifier).toBe("HCONRES-2-119");
+  });
+
+  it("maps a 'Became Public Law No: 118-5.' bill to PASSED with passedAt set", () => {
+    const enactedBill = {
+      ...completeBill,
+      congress: 118,
+      latestAction: {
+        actionDate: "2023-06-03",
+        text: "Became Public Law No: 118-5.",
+      },
+    };
+    const [row] = mapCongressBills(response(enactedBill));
+    expect(row.status).toBe("PASSED");
+    expect(row.passedAt).toBe("2023-06-03");
+  });
+
   it("maps all Congress bill types to their proper congress.gov URL slugs", () => {
     const typesToSlugs: Record<string, string> = {
       HR: "house-bill",
@@ -149,6 +245,14 @@ describe("mapCongressBills", () => {
         `https://www.congress.gov/bill/119th-congress/${slug}/42`
       );
     }
+  });
+
+  it("uses proper ordinal suffixes for sourceUrl (e.g. 121st)", () => {
+    const bill121 = { ...completeBill, type: "HR", congress: 121, number: "1" };
+    const [mapped] = mapCongressBills(response(bill121));
+    expect(mapped.sourceUrl).toBe(
+      "https://www.congress.gov/bill/121st-congress/house-bill/1"
+    );
   });
 });
 
@@ -170,6 +274,54 @@ describe("congressAdapter.fetch", () => {
     }
   });
 
+  it("calls fetch with a URL whose path is /v3/bill/119 and which has no congress= query parameter", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response({ ...completeBill, congress: 119 }),
+    });
+
+    await congressAdapter.fetch({ congress: 119, limit: 20 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/v3/bill/119");
+    expect(parsed.searchParams.has("congress")).toBe(false);
+  });
+
+  it("drops bills from another congress returned by fetch", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    const bill118 = { ...completeBill, congress: 118, number: "1" };
+    const bill119 = { ...completeBill, congress: 119, number: "2" };
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response(bill118, bill119),
+    });
+
+    const rows = await congressAdapter.fetch({ congress: 119 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].identifier).toBe("HCONRES-2-119");
+  });
+
+  it("rejects non-integer congress or limit before any network call", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+
+    await expect(congressAdapter.fetch({ congress: 119.5 })).rejects.toThrow(
+      /integer/i
+    );
+    await expect(
+      congressAdapter.fetch({ congress: "abc" as unknown as number })
+    ).rejects.toThrow(/integer/i);
+    await expect(congressAdapter.fetch({ limit: 12.3 })).rejects.toThrow(
+      /integer/i
+    );
+    await expect(
+      congressAdapter.fetch({ limit: "xyz" as unknown as number })
+    ).rejects.toThrow(/integer/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("fails closed when CONGRESS_GOV_API_KEY is missing", async () => {
     delete process.env.CONGRESS_GOV_API_KEY;
 
@@ -183,7 +335,7 @@ describe("congressAdapter.fetch", () => {
     process.env.CONGRESS_GOV_API_KEY = "test-key";
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => response(completeBill),
+      json: async () => response({ ...completeBill, congress: 119 }),
     });
 
     const rows = await congressAdapter.fetch({ congress: 119, limit: 20 });
@@ -191,7 +343,7 @@ describe("congressAdapter.fetch", () => {
     expect(rows).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("congress=119");
+    expect(url).toContain("/v3/bill/119");
     expect(url).toContain("limit=20");
     expect(url).not.toContain("offset=");
     expect(url).toContain("api_key=test-key");
@@ -202,7 +354,7 @@ describe("congressAdapter.fetch", () => {
     process.env.CONGRESS_GOV_API_KEY = "test-key";
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => response(completeBill),
+      json: async () => response({ ...completeBill, congress: 119 }),
     });
 
     await congressAdapter.fetch({ congress: 119, limit: 50, offset: 50 });
