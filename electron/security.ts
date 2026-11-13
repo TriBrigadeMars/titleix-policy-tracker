@@ -128,3 +128,59 @@ export function createAuthFlowGuard() {
     isActive: () => isActive,
   };
 }
+export type WindowOpenDecision = "allow" | "external" | "deny";
+
+/**
+ * Decide what a `window.open` / `target="_blank"` request from any web
+ * contents may do.
+ *
+ * - `"allow"`: open an in-app child window (same app origin, or an auth
+ *   origin while the OAuth flow is active). The caller must give the child
+ *   the same locked-down `webPreferences` as the main window.
+ * - `"external"`: hand the URL to the system browser; open no window.
+ * - `"deny"`: do nothing.
+ *
+ * `"external"` is returned only for URLs that `isSafeExternalUrl` accepts, so
+ * the caller can pass the URL straight to `shell.openExternal`.
+ */
+export function windowOpenDecision(
+  rawUrl: string,
+  appOrigin: string,
+  authOrigins: string[],
+  authActive: boolean
+): WindowOpenDecision {
+  const action = classifyUrl(rawUrl, appOrigin, authOrigins, authActive);
+  if (action.kind === "ALLOW") {
+    return "allow";
+  }
+  if (action.kind === "OPEN_EXTERNAL" && isSafeExternalUrl(rawUrl)) {
+    return "external";
+  }
+  return "deny";
+}
+
+export interface SecureWebPreferences {
+  preload: string;
+  additionalArguments: string[];
+  nodeIntegration: false;
+  contextIsolation: true;
+  sandbox: true;
+}
+
+/**
+ * The `webPreferences` every app window gets, the main window and the child
+ * windows opened from it alike. Child windows render the same app, so they
+ * receive the same preload and arguments (for `window.titleIXDesktop`).
+ */
+export function secureWebPreferences(
+  preload: string,
+  additionalArguments: string[]
+): SecureWebPreferences {
+  return {
+    preload,
+    additionalArguments: [...additionalArguments],
+    nodeIntegration: false,
+    contextIsolation: true,
+    sandbox: true,
+  };
+}
