@@ -24,6 +24,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:census": "tsx scripts/data-census.ts",
     "ingest:scheduled": "tsx scripts/ingest-scheduled.ts",
+    "ingest:legiscan-capture": "tsx scripts/capture-legiscan-masterlist.ts",
     "local:server": "tsx scripts/local-server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
