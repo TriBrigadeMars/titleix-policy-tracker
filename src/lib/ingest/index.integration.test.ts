@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { prisma } from "@/lib/db";
-import { upsertInstruments, type RawInstrument } from "@/lib/ingest";
+import { upsertInstruments, INGEST_CHUNK_SIZE, type RawInstrument } from "@/lib/ingest";
 import { mapCongressBills } from "@/lib/ingest/congress";
 
 /**
@@ -352,6 +352,70 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
         where: { identifier: oversized.identifier },
       })
     ).toBe(0);
+  });
+
+  it("rolls back all rows in a failing chunk on (source, sourceId) violation while keeping earlier chunks committed", async () => {
+    const existingIdentifier = id("existing-colliding-row");
+    const collisionSource = id("coll-src");
+    const collisionSourceId = id("coll-sid");
+
+    await upsertInstruments([
+      rawRow({
+        jurisdictionCode: fedCode,
+        identifier: existingIdentifier,
+        source: collisionSource,
+        sourceId: collisionSourceId,
+      }),
+    ]);
+
+    // Chunk 1 has INGEST_CHUNK_SIZE rows
+    const chunk1Rows = Array.from({ length: INGEST_CHUNK_SIZE }, (_, i) =>
+      rawRow({
+        jurisdictionCode: fedCode,
+        identifier: id(`chunk1-${i}`),
+      })
+    );
+
+    // Chunk 2: first row is valid, last row violates (source, sourceId) against existingIdentifier
+    const chunk2GoodIdentifier = id("chunk2-good");
+    const chunk2BadIdentifier = id("chunk2-bad");
+    const chunk2Rows = [
+      rawRow({
+        jurisdictionCode: fedCode,
+        identifier: chunk2GoodIdentifier,
+        source: id("chunk2-src"),
+        sourceId: id("chunk2-sid"),
+      }),
+      rawRow({
+        jurisdictionCode: fedCode,
+        identifier: chunk2BadIdentifier,
+        source: collisionSource,
+        sourceId: collisionSourceId,
+      }),
+    ];
+
+    await expect(
+      upsertInstruments([...chunk1Rows, ...chunk2Rows])
+    ).rejects.toThrow();
+
+    // Earlier chunk's rows must exist
+    const chunk1Count = await prisma.instrument.count({
+      where: {
+        identifier: { in: chunk1Rows.map((r) => r.identifier) },
+      },
+    });
+    expect(chunk1Count).toBe(INGEST_CHUNK_SIZE);
+
+    // None of chunk 2's rows must exist
+    const chunk2GoodCount = await prisma.instrument.count({
+      where: { identifier: chunk2GoodIdentifier },
+    });
+    expect(chunk2GoodCount).toBe(0);
+
+    const chunk2BadCount = await prisma.instrument.count({
+      where: { identifier: chunk2BadIdentifier },
+    });
+    expect(chunk2BadCount).toBe(0);
   });
 
   it("stores Congress.gov mapper output end to end", async () => {
