@@ -70,7 +70,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libfuse2t64 \
+            dpkg-dev \
             rpm
 
       - run: npm ci
@@ -83,11 +83,6 @@ jobs:
         run: cargo test
 
       - name: Build Rust / Tauri Linux bundles (AppImage, deb, rpm)
-        env:
-          # linuxdeploy ships as an AppImage; the runner has no working FUSE
-          # mount (libfuse2t64 brings the library, not fusermount), so let
-          # AppImages extract themselves instead of mounting.
-          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npm run tauri:build
 
       - name: Upload Rust / Tauri AppImage & distro packages
