@@ -53,6 +53,8 @@ All 20 items verified against source and against the packaged asar. Evidence giv
 | 19 | server APIs still enforce authorization (untouched: api routes, auth-guards, middleware) | ✅ PASS | All `src/app/api/**/route.ts` still use `requireRole` from `src/lib/auth-guards.ts`. `src/middleware.ts` is unchanged (cookie-presence only). `src/app/(protected)/layout.tsx` is the authoritative page gate via `auth()`. |
 | 20 | renderer UI not treated as authorization boundary (no desktop-side role logic) | ✅ PASS | Desktop only loads the existing Next.js app; the preload surface is `{ platform, version }`. There is no role-aware code path in `electron/`. `isDesktopApp()` (`src/lib/is-desktop.ts`) is a build-style detection helper used only for UI tweaks, never for authorization. |
 
+> **Note (2026-11-12, hardening task 06):** items 16 and 18 describe the WP-14 thin-client build. Since WP-16 a packaged app with no `DESKTOP_APP_URL` starts the standalone local app (`app://tracker`) instead of failing; an explicitly set `DESKTOP_APP_URL` is a runtime-only override and must still be `https://`. The `https` enforcement for that override is unchanged. See `docs/DESKTOP-RELEASE-PIPELINE.md`.
+
 ## Functional smoke
 
 Functional smoke requires an interactive Windows desktop session with a real signed-in user, a Google OAuth flow, and a manual installer run. The audit environment is headless / no GUI / no Google session, so per the WP-14 rule ("anything untestable in your environment is recorded PENDING-ENV, never silently passed"), each item is **PENDING-ENV** with code-level static evidence. None are silently passed.

@@ -1,19 +1,32 @@
 #!/usr/bin/env node
 /**
- * Verifies the packaged desktop app's app.asar against the packaging contract.
+ * Verifies a packaged desktop app against the packaging contract.
  *
- * Run after `npm run desktop:pack`. Two properties must hold, and both are
- * checked by inspection of the real archive rather than by trusting the
- * `files:` allowlist in electron-builder.yml:
+ * Usage: node scripts/verify-desktop-pack.mjs [unpackedDir]
  *
- * 1. Every module in the electron-updater runtime closure is present. The
+ * `unpackedDir` is electron-builder's unpacked output (the folder that holds
+ * `resources/`). It can also be set with DESKTOP_UNPACKED_DIR. The default is
+ * `dist-desktop/win-unpacked` on Windows and `dist-desktop/linux-unpacked`
+ * elsewhere, which is what `npm run desktop:pack` produces on that platform.
+ *
+ * The desktop app is a standalone local app: the Electron shell (app.asar)
+ * spawns the bundled Next.js server and PGlite from `resources/local-bundle`.
+ * Everything is checked by inspecting the real output rather than by trusting
+ * the `files:` / `extraResources:` lists in electron-builder.yml:
+ *
+ * 1. Every module in the electron-updater runtime closure is in app.asar. The
  *    `!node_modules/** / *` negation in electron-builder.yml drops
  *    electron-builder's automatic production-dependency collection, so a
  *    missing entry here is a silently broken updater (`require` throws at
  *    startup, long after the build went green).
- * 2. No secret material or server-only code is present. WP-14's asar audit
+ * 2. No secret material or server-only code is in app.asar. WP-14's asar audit
  *    proved this for the pre-updater build; re-including node_modules is
- *    exactly the kind of change that could regress it.
+ *    exactly the kind of change that could regress it. These rules apply to
+ *    app.asar only: local-bundle legitimately contains Next.js, React and
+ *    Prisma, and names env variables such as DATABASE_URL in its code.
+ * 3. The packed entry point is electron-dist/main.js.
+ * 4. The local bundle the app starts from is packaged. Without it every launch
+ *    ends on the "Local Database Startup Error" card.
  */
 import { createRequire } from "node:module";
 import * as fs from "node:fs";
@@ -21,7 +34,30 @@ import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-const ASAR_PATH = path.join("dist-desktop", "win-unpacked", "resources", "app.asar");
+const DEFAULT_UNPACKED_DIR = path.join(
+  "dist-desktop",
+  process.platform === "win32" ? "win-unpacked" : "linux-unpacked",
+);
+const UNPACKED_DIR =
+  process.argv[2] || process.env.DESKTOP_UNPACKED_DIR || DEFAULT_UNPACKED_DIR;
+const RESOURCES_DIR = path.join(UNPACKED_DIR, "resources");
+const ASAR_PATH = path.join(RESOURCES_DIR, "app.asar");
+const LOCAL_BUNDLE_DIR = path.join(RESOURCES_DIR, "local-bundle");
+
+/**
+ * Files the packaged app needs to start its local server. Paths are relative
+ * to resources/local-bundle. `local-server-entry.cjs` is what
+ * electron/local-runtime.ts spawns; `required-server-files.json` is the first
+ * thing that entry reads to boot Next.js; `next` and `@prisma/client` are the
+ * modules it requires. electron-builder silently drops a root `node_modules`
+ * from an extraResources source, so their absence is a real failure mode.
+ */
+const REQUIRED_LOCAL_BUNDLE_FILES = [
+  "local-server-entry.cjs",
+  path.join(".next", "required-server-files.json"),
+  path.join("node_modules", "next", "package.json"),
+  path.join("node_modules", "@prisma", "client", "package.json"),
+];
 
 /** Runtime closure of electron-updater + electron-log, from `npm ls`. */
 const REQUIRED_MODULES = [
@@ -45,8 +81,9 @@ const REQUIRED_MODULES = [
 ];
 
 /**
- * Hosted-app code that must never reach the client. The desktop shell is a
- * thin client against DESKTOP_APP_URL (WP-15B Deferred Item 5).
+ * Server code that must never be in app.asar. The Electron main process does
+ * not need it, and server code belongs in resources/local-bundle, which is
+ * shipped outside the asar and is not subject to these rules.
  */
 const FORBIDDEN_PATH_PATTERNS = [
   { label: "bundled Next.js app", pattern: /^\/src\// },
@@ -86,10 +123,12 @@ function ok(message) {
 if (!fs.existsSync(ASAR_PATH)) {
   console.error(
     `Packaged archive not found at ${ASAR_PATH}.\n` +
-      "Run `npm run desktop:pack` first.",
+      "Run `npm run desktop:pack` first, or pass the unpacked directory as an argument.",
   );
   process.exit(1);
 }
+
+console.log(`Verifying packaged app in ${UNPACKED_DIR}`);
 
 const asar = require("@electron/asar");
 const entries = asar.listPackage(ASAR_PATH);
@@ -168,6 +207,27 @@ try {
   }
 } catch (error) {
   fail(`could not read packed package.json: ${error.message}`);
+}
+
+// --- 5. local bundle --------------------------------------------------------
+
+const missingLocalFiles = REQUIRED_LOCAL_BUNDLE_FILES.filter(
+  (relativePath) =>
+    !fs
+      .statSync(path.join(LOCAL_BUNDLE_DIR, relativePath), { throwIfNoEntry: false })
+      ?.isFile(),
+);
+
+if (missingLocalFiles.length > 0) {
+  for (const relativePath of missingLocalFiles) {
+    fail(
+      `local bundle incomplete — missing ${path.join("resources", "local-bundle", relativePath)}` +
+        " (run `npm run desktop:stage-local` before electron-builder, and check" +
+        " electron-builder.yml extraResources)",
+    );
+  }
+} else {
+  ok(`local bundle present (${REQUIRED_LOCAL_BUNDLE_FILES.length} required files)`);
 }
 
 if (process.exitCode) {

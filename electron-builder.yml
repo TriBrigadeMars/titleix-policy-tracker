@@ -45,11 +45,23 @@ files:
   - "!.env*"
 
 extraResources:
+  # The packaged app is a standalone local app on every platform: it spawns
+  # resources/local-bundle/local-server-entry.cjs (see electron/local-runtime.ts).
+  # `npm run desktop:stage-local` must run before electron-builder.
   - from: local-bundle
     to: local-bundle
     filter:
       - "**/*"
       - "!.env*"
+  # electron-builder always drops a `node_modules` folder at the root of a copy
+  # source (app-builder-lib util/filter.js), whatever the filter says, so the
+  # entry above never copies local-bundle/node_modules. Copy it as its own
+  # source. Without it the local server fails with "Cannot find module
+  # '@prisma/client'". `npm run desktop:verify-pack` asserts it is present.
+  - from: local-bundle/node_modules
+    to: local-bundle/node_modules
+    filter:
+      - "**/*"
   - from: build/icon.png
     to: icon.png
 

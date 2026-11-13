@@ -14,6 +14,33 @@ checkout → npm ci → prisma generate → lint → typecheck (web + desktop)
 
 A parallel job compiles and tests (`cargo test`) the Rust/Tauri v2 shell in `src-tauri/` and builds its AppImage, `.deb`, and `.rpm` artifacts.
 
+Windows packaging runs in [`.github/workflows/release.yml`](../.github/workflows/release.yml) on `windows-latest`, for `v*` tags and for `workflow_dispatch` (`dry_run: true` builds and verifies without publishing):
+
+```
+checkout → npm ci → prisma generate → lint → typecheck (web + desktop)
+→ vitest → next build → stage-local-bundle → desktop:compile → electron-builder (NSIS)
+→ [signature check, when signed] → verify-desktop-pack → local server smoke
+→ checksums → upload artifacts → [publish, signed tag pushes only]
+```
+
+### One desktop model: standalone local app
+
+The Windows installer ships the same standalone local app as the Linux packages. There is no hosted site to point a thin client at, and the build has no app URL setting.
+
+- **No build-time URL.** `release.yml` does not set `DESKTOP_APP_URL`; nothing in the build reads it. A packaged app always starts in local mode (`app://tracker`).
+- **`DESKTOP_APP_URL` is a runtime override only.** `resolveAppUrl` in `electron/constants.ts` reads it from the *user's* environment at launch. Unset (the normal case) means local mode; set, it must be `https://` or the app shows the "Configuration Error" card. It is never baked into a package.
+- **`local-bundle/` must be staged before packaging.** `npm run desktop:stage-local` copies the Next.js standalone build, migrations, fixtures and PGlite into `local-bundle/` and writes `local-bundle/local-server-entry.cjs`. `electron-builder.yml` `extraResources` copies it to `resources/local-bundle` on every platform, with `local-bundle/node_modules` as a separate entry because electron-builder always drops a `node_modules` folder at the root of a copy source. Without it, every launch ends on the "Local Database Startup Error" card.
+- **Windows uses a named pipe, not a Unix socket.** `electron/local-runtime.ts` picks `\\.\pipe\titleix-policy-tracker-<user>` and `%APPDATA%\titleix-policy-tracker` for data. The generated `local-server-entry.cjs` skips every `chmod`/`unlink`/stale-socket probe on `win32`, because none of them apply to a pipe.
+
+### Release gates for the local bundle
+
+- **`scripts/verify-desktop-pack.mjs [unpackedDir]`** (`npm run desktop:verify-pack`) checks the unpacked output (default `dist-desktop/win-unpacked` on Windows, `dist-desktop/linux-unpacked` elsewhere; also `DESKTOP_UNPACKED_DIR`). It fails if:
+  - the electron-updater closure is missing from `app.asar`;
+  - `app.asar` contains server code (Next.js, React, Prisma, next-auth) or secret names (`DATABASE_URL`, `AUTH_SECRET`, ingest API keys) — these rules apply to `app.asar` only, because `resources/local-bundle` legitimately contains Next.js and Prisma;
+  - the packed entry point is not `electron-dist/main.js`;
+  - `resources/local-bundle/local-server-entry.cjs`, `resources/local-bundle/.next/required-server-files.json`, or the bundle's `node_modules/next` / `node_modules/@prisma/client` is missing.
+- **Local server smoke** (release.yml, PowerShell): runs `dist-desktop\win-unpacked\Title IX Policy Tracker.exe resources\local-bundle\local-server-entry.cjs` with `ELECTRON_RUN_AS_NODE=1`, a temporary `TITLEIX_DATA_DIR`, a `\\.\pipe\titleix-smoke-<run id>` named pipe and no `DATABASE_URL` (matching the child environment `electron/local-runtime.ts` builds), and fails the job unless the server prints `READY` within 60 seconds.
+
 ## Deferred Item 4 — Clean-VM / distro lifecycle verification
 
 - **Linux targets**: Arch (`pacman` / `PKGBUILD`), Ubuntu (`deb`), Fedora (`rpm`), and universal downloadable `AppImage`.
