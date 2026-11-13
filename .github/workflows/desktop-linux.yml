@@ -88,7 +88,18 @@ jobs:
           # glibc RELR sections (.relr.dyn). At the default log level Tauri
           # discards that stderr and reports only "failed to run linuxdeploy".
           NO_STRIP: "true"
-        run: npm run tauri:build -- --verbose
+        run: |
+          # Next's standalone trace copies sharp-linux-x64.node out of its
+          # package. linuxdeploy follows that addon and cannot see the
+          # vendored libvips it links against unless this directory is on
+          # the library path.
+          vips_lib="${GITHUB_WORKSPACE}/node_modules/@img/sharp-libvips-linux-x64/lib"
+          if ! compgen -G "${vips_lib}/libvips-cpp.so*" > /dev/null; then
+            echo "Vendored libvips not found at ${vips_lib}" >&2
+            exit 1
+          fi
+          export LD_LIBRARY_PATH="${vips_lib}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+          npm run tauri:build -- --verbose
 
       - name: Upload Rust / Tauri AppImage & distro packages
         uses: actions/upload-artifact@v4
