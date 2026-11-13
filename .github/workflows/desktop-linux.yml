@@ -83,7 +83,12 @@ jobs:
         run: cargo test
 
       - name: Build Rust / Tauri Linux bundles (AppImage, deb, rpm)
-        run: npm run tauri:build
+        env:
+          # linuxdeploy bundles binutils 2.35 strip, which exits on Ubuntu 24.04
+          # glibc RELR sections (.relr.dyn). At the default log level Tauri
+          # discards that stderr and reports only "failed to run linuxdeploy".
+          NO_STRIP: "true"
+        run: npm run tauri:build -- --verbose
 
       - name: Upload Rust / Tauri AppImage & distro packages
         uses: actions/upload-artifact@v4
