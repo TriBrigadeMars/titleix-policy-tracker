@@ -8,6 +8,7 @@ import {
   screen,
   shell,
   type MenuItemConstructorOptions,
+  type WebContents,
 } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -39,6 +40,8 @@ import {
   createAuthFlowGuard,
   isNetworkError,
   isSafeExternalUrl,
+  secureWebPreferences,
+  windowOpenDecision,
 } from "./security";
 import { resolveInitialBounds, type WindowBounds } from "./window-state";
 import { describeSkipReason } from "./update-policy";
@@ -115,6 +118,100 @@ try {
   resolvedTargetUrl = null;
 }
 const appOrigin = resolvedTargetUrl ? urlOrigin(resolvedTargetUrl) : null;
+const authOrigins = authAllowlistOrigins(appOrigin ?? "");
+
+// One OAuth-flow guard for the whole app, shared by every web contents.
+const authFlowGuard = createAuthFlowGuard();
+
+const PRELOAD_PATH = path.join(__dirname, "preload.js");
+
+/** `webPreferences` for the main window and every in-app child window. */
+function appWebPreferences() {
+  return secureWebPreferences(PRELOAD_PATH, [
+    `${VERSION_ARG_PREFIX}${app.getVersion()}`,
+  ]);
+}
+
+function isSignInPath(url: string): boolean {
+  if (appOrigin === null || urlOrigin(url) !== appOrigin) {
+    return false;
+  }
+  try {
+    return new URL(url).pathname.startsWith("/sign-in");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Navigation rules for one web contents. Registered for every web contents
+ * through `web-contents-created`, so child windows opened with
+ * `target="_blank"` get the same rules as the main window: external https
+ * links go to the system browser, everything outside the app origin (and the
+ * auth origins during sign-in) is blocked, and webviews are refused.
+ */
+function attachNavigationGuards(contents: WebContents): void {
+  contents.on("will-navigate", (event, url) => {
+    if (isSignInPath(url)) {
+      authFlowGuard.begin();
+    }
+    const action = classifyUrl(
+      url,
+      appOrigin ?? "",
+      authOrigins,
+      authFlowGuard.isActive()
+    );
+    if (action.kind === "ALLOW") {
+      // Allow in-app navigation
+    } else if (action.kind === "OPEN_EXTERNAL") {
+      event.preventDefault();
+      if (isSafeExternalUrl(url)) {
+        void shell.openExternal(url);
+      }
+    } else {
+      event.preventDefault();
+    }
+  });
+
+  contents.on("did-navigate", (_event, url) => {
+    if (appOrigin !== null && urlOrigin(url) === appOrigin && !isSignInPath(url)) {
+      authFlowGuard.end();
+    }
+  });
+
+  contents.on("did-finish-load", () => {
+    const url = contents.getURL();
+    if (appOrigin !== null && urlOrigin(url) === appOrigin && !isSignInPath(url)) {
+      authFlowGuard.end();
+    }
+  });
+
+  contents.setWindowOpenHandler(({ url }) => {
+    const decision = windowOpenDecision(
+      url,
+      appOrigin ?? "",
+      authOrigins,
+      authFlowGuard.isActive()
+    );
+    if (decision === "allow") {
+      // The child renders the same app, so it gets the same preload and the
+      // same sandboxed, context-isolated, node-free preferences. Its own
+      // navigation is guarded by `web-contents-created`.
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: { webPreferences: appWebPreferences() },
+      };
+    }
+    if (decision === "external") {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  contents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+}
 
 const OFFLINE_PAGE_FILE_NAME = "offline.html";
 const offlinePagePath = path.join(__dirname, OFFLINE_PAGE_FILE_NAME);
@@ -396,13 +493,7 @@ function createMainWindow(): void {
     minWidth: DESKTOP_MIN_WIDTH,
     minHeight: DESKTOP_MIN_HEIGHT,
     ...(linuxIcon ? { icon: linuxIcon } : {}),
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      additionalArguments: [`${VERSION_ARG_PREFIX}${app.getVersion()}`],
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-    },
+    webPreferences: appWebPreferences(),
   });
 
   mainWindow = win;
@@ -437,83 +528,8 @@ function createMainWindow(): void {
     mainWindow = null;
   });
 
-  const authOrigins = authAllowlistOrigins(appOrigin ?? "");
-  const guard = createAuthFlowGuard();
-
-  const isSignInPath = (url: string): boolean => {
-    return (
-      urlOrigin(url) === appOrigin &&
-      (() => {
-        try {
-          return new URL(url).pathname.startsWith("/sign-in");
-        } catch {
-          return false;
-        }
-      })()
-    );
-  };
-
-  win.webContents.on("will-navigate", (_event, url) => {
-    if (isSignInPath(url)) {
-      guard.begin();
-    }
-  });
-
-  win.webContents.on("did-navigate", (_event, url) => {
-    if (appOrigin !== null && urlOrigin(url) === appOrigin && !isSignInPath(url)) {
-      guard.end();
-    }
-  });
-
-  win.webContents.on("did-finish-load", () => {
-    const url = win.webContents.getURL();
-    if (appOrigin !== null && urlOrigin(url) === appOrigin && !isSignInPath(url)) {
-      guard.end();
-    }
-  });
-
-  win.webContents.on("will-navigate", (event, url) => {
-    const action = classifyUrl(
-      url,
-      appOrigin ?? "",
-      authOrigins,
-      guard.isActive()
-    );
-    if (action.kind === "ALLOW") {
-      // Allow in-app navigation
-    } else if (action.kind === "OPEN_EXTERNAL") {
-      event.preventDefault();
-      if (isSafeExternalUrl(url)) {
-        void shell.openExternal(url);
-      }
-    } else {
-      event.preventDefault();
-    }
-  });
-
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    const action = classifyUrl(
-      url,
-      appOrigin ?? "",
-      authOrigins,
-      guard.isActive()
-    );
-    if (action.kind === "ALLOW") {
-      return { action: "allow" };
-    }
-    if (action.kind === "OPEN_EXTERNAL") {
-      if (isSafeExternalUrl(url)) {
-        void shell.openExternal(url);
-      }
-      return { action: "deny" };
-    }
-    return { action: "deny" };
-  });
-
-  win.webContents.on("will-attach-webview", (event) => {
-    event.preventDefault();
-  });
-
+  // Navigation guards are attached by `web-contents-created`; only the
+  // main window's offline page and window-state saving are wired here.
   win.webContents.on(
     "did-fail-load",
     (
@@ -547,6 +563,12 @@ function createMainWindow(): void {
 }
 
 if (gotSingleInstanceLock) {
+  // Registered before the first window exists, so every web contents (the
+  // main window, child windows, anything else) gets the guards exactly once.
+  app.on("web-contents-created", (_event, contents) => {
+    attachNavigationGuards(contents);
+  });
+
   app.whenReady().then(async () => {
     if (resolvedTargetUrl && isLocalModeUrl(resolvedTargetUrl)) {
       try {

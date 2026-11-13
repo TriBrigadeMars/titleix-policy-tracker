@@ -4,6 +4,8 @@ import {
   createAuthFlowGuard,
   isNetworkError,
   isSafeExternalUrl,
+  secureWebPreferences,
+  windowOpenDecision,
 } from "./security";
 
 const appOrigin = "https://titleix.example.org";
@@ -114,5 +116,73 @@ describe("isNetworkError", () => {
     [Number.NaN, false],
   ])("classifies %s -> %s", (code, expected) => {
     expect(isNetworkError(code)).toBe(expected);
+  });
+});
+describe("windowOpenDecision", () => {
+  const localOrigin = "app://tracker";
+
+  it.each([
+    ["app://tracker/?j=US,CA", localOrigin, false],
+    ["app://tracker/triage", localOrigin, false],
+    ["https://titleix.example.org/?j=US,CA", appOrigin, false],
+  ])("returns allow for %s (origin=%s)", (url, origin, authActive) => {
+    expect(windowOpenDecision(url, origin, authOrigins, authActive)).toBe(
+      "allow"
+    );
+  });
+
+  it("returns allow for an auth origin only while the auth flow is active", () => {
+    const url = "https://accounts.google.com/o/oauth2/v2/auth?x=1";
+    expect(windowOpenDecision(url, appOrigin, authOrigins, true)).toBe("allow");
+    expect(windowOpenDecision(url, appOrigin, authOrigins, false)).toBe(
+      "external"
+    );
+  });
+
+  it.each([
+    ["https://www.congress.gov/bill/118th-congress/house-bill/1", localOrigin],
+    ["https://legiscan.com/WY/bill/HB0001/2025", localOrigin],
+    ["https://evil.example.org/", appOrigin],
+  ])("returns external for %s", (url, origin) => {
+    expect(windowOpenDecision(url, origin, authOrigins, false)).toBe(
+      "external"
+    );
+  });
+
+  it.each([
+    ["http://www.congress.gov/", localOrigin],
+    ["http://titleix.example.org/", appOrigin],
+    ["file:///etc/passwd", localOrigin],
+    ["javascript:alert(1)", localOrigin],
+    ["data:text/html,<script>alert(1)</script>", localOrigin],
+    ["app://other/", localOrigin],
+    ["app://tracker/", appOrigin],
+    ["about:blank", localOrigin],
+    ["", localOrigin],
+    ["not a url", localOrigin],
+  ])("returns deny for %s (origin=%s)", (url, origin) => {
+    expect(windowOpenDecision(url, origin, authOrigins, false)).toBe("deny");
+    expect(windowOpenDecision(url, origin, authOrigins, true)).toBe("deny");
+  });
+});
+
+describe("secureWebPreferences", () => {
+  it("locks down every window and keeps the preload", () => {
+    expect(
+      secureWebPreferences("/app/preload.js", ["--titleix-version=1.2.3"])
+    ).toEqual({
+      preload: "/app/preload.js",
+      additionalArguments: ["--titleix-version=1.2.3"],
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    });
+  });
+
+  it("does not share the arguments array between windows", () => {
+    const args = ["--a"];
+    const prefs = secureWebPreferences("/p.js", args);
+    args.push("--b");
+    expect(prefs.additionalArguments).toEqual(["--a"]);
   });
 });
