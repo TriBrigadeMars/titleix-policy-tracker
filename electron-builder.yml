@@ -1,6 +1,5 @@
 appId: org.titleixpolicytracker.desktop
 productName: Title IX Policy Tracker
-publish: null
 
 directories:
   output: dist-desktop
