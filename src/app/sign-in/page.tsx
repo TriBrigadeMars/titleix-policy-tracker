@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
-import { auth, signIn } from "@/lib/auth";
+import { signInWithGoogle } from "@/app/auth-actions";
+import { auth } from "@/lib/auth";
+import { isLocalMode } from "@/lib/local-mode";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,20 +22,18 @@ export default async function SignInPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  // The desktop shell already provides the session, and Google sign-in
+  // cannot work in local mode.
+  if (isLocalMode()) {
+    redirect("/");
+  }
+
   const session = await auth();
   if (session?.user) {
     redirect("/");
   }
 
   const { error } = await searchParams;
-
-  async function signInWithGoogle() {
-    "use server";
-    if (!process.env.AUTH_GOOGLE_ID || !process.env.AUTH_GOOGLE_SECRET) {
-      redirect("/sign-in?error=Configuration");
-    }
-    await signIn("google", { redirectTo: "/" });
-  }
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">

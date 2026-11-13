@@ -251,6 +251,12 @@ checked-in migration must apply.
 - Sessions are stored in the database via the Prisma adapter, so role changes
   take effect immediately (no stale JWT to wait out).
 - `security-review` agent audit required after any auth-related PR
+- Desktop local mode (`TITLEIX_LOCAL_MODE=1`, checked with `isLocalMode()` in
+  `src/lib/local-mode.ts`): the shell supplies one fixed session, so sign-out
+  is not offered, `/sign-in` redirects to `/`, and the sign-in and sign-out
+  server actions in `src/app/auth-actions.ts` are no-ops. The guard is in the
+  actions themselves, because a server action stays callable when its button
+  is hidden.
 
 ### Authorization layers
 

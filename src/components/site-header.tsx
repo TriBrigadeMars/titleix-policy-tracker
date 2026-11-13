@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { auth, signOut } from "@/lib/auth";
+import { signOutAction } from "@/app/auth-actions";
+import { auth } from "@/lib/auth";
+import { isLocalMode } from "@/lib/local-mode";
 import { hasRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,11 +10,7 @@ export async function SiteHeader() {
   const session = await auth();
   const isEditor = session?.user?.role ? hasRole(session.user.role, "EDITOR") : false;
   const isAdmin = session?.user?.role ? hasRole(session.user.role, "ADMIN") : false;
-
-  async function signOutAction() {
-    "use server";
-    await signOut({ redirectTo: "/sign-in" });
-  }
+  const localMode = isLocalMode();
 
   return (
     <header className="border-b">
@@ -55,7 +53,18 @@ export async function SiteHeader() {
           </nav>
         </div>
 
-        {session?.user ? (
+        {localMode ? (
+          // The desktop shell owns the session in local mode: there is one
+          // user and no way back in after signing out, so offer neither.
+          <div className="flex items-center gap-3">
+            {session?.user && (
+              <span className="text-sm text-muted-foreground">
+                {session.user.name ?? session.user.email}
+              </span>
+            )}
+            <Badge variant="outline">Local mode</Badge>
+          </div>
+        ) : session?.user ? (
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
               {session.user.name ?? session.user.email}

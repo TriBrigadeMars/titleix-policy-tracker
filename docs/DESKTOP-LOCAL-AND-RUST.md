@@ -29,7 +29,7 @@ The hosted web application (Next.js + PostgreSQL + Google OAuth) remains complet
 
 ### Why pages and API routes remain unchanged
 
-On startup, `bootstrapLocalPGlite` (`src/lib/local-runtime/pglite-bootstrap.ts`) applies all checked-in `prisma/migrations/*/migration.sql` files, seeds the 52 jurisdictions + 8 issue tags + reviewed fixture corpus on first run, and upserts a single local `ADMIN` user + `Session` row matching the shell's per-launch 256-bit `TITLEIX_SESSION_TOKEN`. Because the shell injects `Cookie: authjs.session-token=<token>` on every request forwarded over `app.sock`, `src/middleware.ts`, `src/lib/auth.ts`, `src/lib/auth-guards.ts`, and every RSC page and API route operate without any mode-specific branches.
+On startup, `bootstrapLocalPGlite` (`src/lib/local-runtime/pglite-bootstrap.ts`) applies all checked-in `prisma/migrations/*/migration.sql` files, seeds the 52 jurisdictions + 8 issue tags + reviewed fixture corpus on first run, and upserts a single local `ADMIN` user + `Session` row matching the shell's per-launch 256-bit `TITLEIX_SESSION_TOKEN`. Because the shell injects `Cookie: authjs.session-token=<token>` on every request forwarded over `app.sock`, `src/middleware.ts`, `src/lib/auth.ts`, `src/lib/auth-guards.ts`, and every RSC page and API route authenticate without any mode-specific branches. The one exception is sign-in and sign-out: deleting that session row would lock the user out until the next launch, so when `isLocalMode()` (`src/lib/local-mode.ts`, `TITLEIX_LOCAL_MODE === "1"`) is true the header shows a "Local mode" badge instead of a sign-out button, `/sign-in` redirects to `/`, and the `signOutAction` and `signInWithGoogle` server actions (`src/app/auth-actions.ts`) return without doing anything.
 
 ---
 
