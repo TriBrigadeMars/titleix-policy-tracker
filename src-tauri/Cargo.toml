@@ -28,3 +28,6 @@ tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["io-util", "net", "process", "rt-multi-thread", "time"] }
 url = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
