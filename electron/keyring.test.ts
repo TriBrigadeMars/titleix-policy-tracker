@@ -9,6 +9,11 @@ import {
   proxyCustomSchemeToSocket,
 } from "./local-runtime";
 
+// XDG paths, POSIX 0700 modes and Unix-domain sockets are Linux/macOS
+// behaviour; the Windows build uses a named pipe instead. Gated, not removed:
+// these still run on every non-Windows CI job.
+const ON_WINDOWS = process.platform === "win32";
+
 describe("readIngestKeysFromKeyring", () => {
   it("reads available ingest keys from OS keyring and falls back per-key", async () => {
     const store: Record<string, string> = {
@@ -42,7 +47,7 @@ describe("proxyCustomSchemeToSocket", () => {
     }
   });
 
-  it("forwards app://tracker requests over Unix socket, injects session cookie, and strips Set-Cookie", async () => {
+  it.skipIf(ON_WINDOWS)("forwards app://tracker requests over Unix socket, injects session cookie, and strips Set-Cookie", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "electron-uds-"));
     tempDirs.push(dir);
     const socketPath = path.join(dir, "app.sock");

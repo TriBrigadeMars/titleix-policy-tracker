@@ -29,9 +29,10 @@ env:
   AUTH_SECRET: "build-time-placeholder-not-a-secret"
   AUTH_GOOGLE_ID: "build-time-placeholder"
   AUTH_GOOGLE_SECRET: "build-time-placeholder"
-  # The packaged app is a thin client; this is the hosted origin it loads and
-  # is compiled into the build. Override with a repository variable.
-  DESKTOP_APP_URL: ${{ vars.DESKTOP_APP_URL || 'https://titleix.example.org' }}
+  # No DESKTOP_APP_URL here on purpose. The Windows app is a standalone local
+  # app, like the Linux packages: it runs the bundled Next.js server and PGlite
+  # from resources/local-bundle. Nothing reads DESKTOP_APP_URL at build time;
+  # electron/constants.ts reads it only from the user's environment at runtime.
 
 jobs:
   build:
@@ -69,6 +70,13 @@ jobs:
 
       - name: Build Next.js app
         run: npm run build
+
+      # The packaged app starts in local mode and spawns
+      # resources/local-bundle/local-server-entry.cjs. electron-builder.yml
+      # copies local-bundle/ into resources via extraResources, so it must be
+      # staged before packaging or the app shows "Local Database Startup Error".
+      - name: Stage local bundle
+        run: npm run desktop:stage-local
 
       - name: Compile Electron main process
         run: npm run desktop:compile
@@ -114,6 +122,7 @@ jobs:
       # below, which must stay AFTER this step.
 
       - name: Build installer
+        id: package
         shell: pwsh
         run: |
           # `npx electron-builder` is invoked directly rather than via the
@@ -166,10 +175,88 @@ jobs:
 
       # --- Packaging contract ---------------------------------------------
       # Asserts the asar carries the updater's full dependency closure and no
-      # server code or secrets. This is the regression guard for WP-14's asar
-      # audit after re-including node_modules for electron-updater.
+      # server code or secrets (WP-14's asar audit), and that the local bundle
+      # the app starts from (resources/local-bundle) was packaged.
+      #
+      # This step and the smoke step below run whenever packaging succeeded, so
+      # one run reports both results; everything after them still needs both.
       - name: Verify packaging contract
-        run: node scripts/verify-desktop-pack.mjs
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        run: node scripts/verify-desktop-pack.mjs dist-desktop/win-unpacked
+
+      # --- Local server smoke ---------------------------------------------
+      # Starts the packaged local server exactly the way electron/local-runtime.ts
+      # does (the app's own executable with ELECTRON_RUN_AS_NODE=1, listening on
+      # a Windows named pipe) and fails the job unless it prints READY within
+      # 60 seconds. This is what the installed app needs on first launch.
+      - name: Smoke test packaged local server
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $unpacked = Resolve-Path "dist-desktop\win-unpacked"
+          $exe = Join-Path $unpacked "Title IX Policy Tracker.exe"
+          $entry = Join-Path $unpacked "resources\local-bundle\local-server-entry.cjs"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Packaged executable not found: $exe" }
+          if (-not (Test-Path -LiteralPath $entry)) { throw "Local server entry not found: $entry" }
+
+          $dataDir = Join-Path $env:RUNNER_TEMP "titleix-smoke-data"
+          $stdout = Join-Path $env:RUNNER_TEMP "titleix-smoke.out.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "titleix-smoke.err.log"
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $dataDir, $stdout, $stderr
+
+          # Match the child environment electron/local-runtime.ts builds: the
+          # runtime deletes DATABASE_URL, so the smoke must not inherit the
+          # workflow's build-time placeholder either.
+          Remove-Item Env:DATABASE_URL -ErrorAction SilentlyContinue
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          $env:NODE_ENV = "production"
+          $env:TITLEIX_LOCAL_MODE = "1"
+          $env:TITLEIX_DATA_DIR = $dataDir
+          $env:TITLEIX_SOCKET_PATH = "\\.\pipe\titleix-smoke-$env:GITHUB_RUN_ID"
+          $env:TITLEIX_SESSION_TOKEN = [guid]::NewGuid().ToString("N")
+
+          $proc = Start-Process -FilePath $exe -ArgumentList "`"$entry`"" `
+            -WorkingDirectory (Split-Path $entry) -NoNewWindow -PassThru `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          # Cache the process handle now so ExitCode is still readable after exit.
+          $null = $proc.Handle
+
+          # The server still holds the log open, so read it with shared access.
+          function Read-SharedText([string]$path) {
+            try {
+              $fs = [IO.File]::Open($path, "Open", "Read", "ReadWrite")
+              try { return (New-Object IO.StreamReader($fs)).ReadToEnd() } finally { $fs.Dispose() }
+            } catch { return "" }
+          }
+
+          $ready = $false
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Date) -lt $deadline) {
+            if ((Read-SharedText $stdout).Contains("READY ")) {
+              $ready = $true
+              break
+            }
+            if ($proc.HasExited) { break }
+            Start-Sleep -Milliseconds 500
+          }
+
+          if (-not $proc.HasExited) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            $proc.WaitForExit(10000) | Out-Null
+          }
+
+          Write-Host "--- local server stdout ---"
+          Write-Host (Read-SharedText $stdout)
+          Write-Host "--- local server stderr ---"
+          Write-Host (Read-SharedText $stderr)
+
+          if (-not $ready) {
+            if ($proc.HasExited) {
+              throw "Local server exited with code $($proc.ExitCode) before printing READY."
+            }
+            throw "Local server did not print READY within 60 seconds."
+          }
+          Write-Host "Local server printed READY."
 
       # --- Checksums and artefacts ----------------------------------------
 
