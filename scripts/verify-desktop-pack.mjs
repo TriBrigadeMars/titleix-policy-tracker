@@ -93,6 +93,7 @@ const FORBIDDEN_PATH_PATTERNS = [
   { label: "react", pattern: /^\/node_modules\/(?:react|react-dom)\// },
   { label: "prisma", pattern: /^\/node_modules\/@?prisma[^/]*\// },
   { label: "next-auth", pattern: /^\/node_modules\/(?:next-auth|@auth)\// },
+  { label: "compiled test file", pattern: /\.test\.js$/ },
 ];
 
 /**
@@ -107,6 +108,31 @@ const FORBIDDEN_CONTENT = [
   "CONGRESS_GOV_API_KEY",
   "OPEN_STATES_API_KEY",
   "LEGISCAN_API_KEY",
+];
+
+/**
+ * The standalone local app's shell has to *name* some of these variables: it
+ * reads the user's ingest keys from the OS keyring and hands them to the local
+ * server, generates a fresh AUTH_SECRET per launch, and strips DATABASE_URL
+ * from the child environment. Those names are allowed only in the one file
+ * that needs each of them; the same name anywhere else still fails. Names are
+ * not secrets, so the value check below is what catches a real leak.
+ */
+const ALLOWED_ENV_NAME_REFERENCES = {
+  "/electron-dist/keyring.js": [
+    "CONGRESS_GOV_API_KEY",
+    "OPEN_STATES_API_KEY",
+    "LEGISCAN_API_KEY",
+  ],
+  "/electron-dist/local-runtime.js": ["DATABASE_URL", "AUTH_SECRET"],
+};
+
+/** Shapes of actual secret values. Never allowed anywhere in the asar. */
+const FORBIDDEN_VALUE_PATTERNS = [
+  {
+    label: "Postgres connection string with credentials",
+    pattern: /postgres(?:ql)?:\/\/[^\s"'`/@]+:[^\s"'`@]+@/i,
+  },
 ];
 
 const TEXT_FILE = /\.(?:js|mjs|cjs|json|yml|yaml|txt|html|css|node|md)$/i;
@@ -179,9 +205,15 @@ for (const entry of entrySet) {
   } catch {
     continue; // binary or unreadable entry — skip
   }
+  const allowed = ALLOWED_ENV_NAME_REFERENCES[entry] ?? [];
   for (const needle of FORBIDDEN_CONTENT) {
-    if (text.includes(needle)) {
+    if (text.includes(needle) && !allowed.includes(needle)) {
       secretHits.push(`${needle} in ${entry}`);
+    }
+  }
+  for (const { label, pattern } of FORBIDDEN_VALUE_PATTERNS) {
+    if (pattern.test(text)) {
+      secretHits.push(`${label} in ${entry}`);
     }
   }
 }

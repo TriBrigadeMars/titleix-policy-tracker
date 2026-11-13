@@ -43,6 +43,8 @@ async function buildUnpackedApp(options: {
     | "missing"
     | "no-required-server-files"
     | "no-node-modules";
+  /** Extra files placed inside app.asar, keyed by path relative to its root. */
+  asarFiles?: Record<string, string>;
 }): Promise<string> {
   const appSrc = path.join(root, "app-src");
   write(
@@ -50,6 +52,18 @@ async function buildUnpackedApp(options: {
     JSON.stringify({ name: "fixture", main: "electron-dist/main.js" })
   );
   write(path.join(appSrc, "electron-dist", "main.js"), "// shell\n");
+  // The real shell names these variables; they are allowed in these files only.
+  write(
+    path.join(appSrc, "electron-dist", "keyring.js"),
+    'const KEYS = ["CONGRESS_GOV_API_KEY", "OPEN_STATES_API_KEY", "LEGISCAN_API_KEY"];\n'
+  );
+  write(
+    path.join(appSrc, "electron-dist", "local-runtime.js"),
+    "env.AUTH_SECRET = random(); delete env.DATABASE_URL;\n"
+  );
+  for (const [rel, contents] of Object.entries(options.asarFiles ?? {})) {
+    write(path.join(appSrc, rel), contents);
+  }
   for (const name of updaterModules()) {
     write(
       path.join(appSrc, "node_modules", name, "package.json"),
@@ -118,6 +132,38 @@ describe("scripts/verify-desktop-pack.mjs", () => {
     expect(output).toContain("no secret or env material in asar text files");
     expect(output).toContain("Desktop packaging contract satisfied.");
     expect(status).toBe(0);
+  });
+
+  it("fails when an allowed env name appears outside its one allowed file", async () => {
+    const unpacked = await buildUnpackedApp({
+      localBundle: "complete",
+      asarFiles: { "electron-dist/main.js": "const k = process.env.LEGISCAN_API_KEY;\n" },
+    });
+    const { status, output } = verify([unpacked]);
+    expect(output).toContain("LEGISCAN_API_KEY in /electron-dist/main.js");
+    expect(status).not.toBe(0);
+  });
+
+  it("fails when a Postgres connection string with credentials is packaged", async () => {
+    const unpacked = await buildUnpackedApp({
+      localBundle: "complete",
+      asarFiles: {
+        "electron-dist/config.json": JSON.stringify({ url: "postgresql://admin:hunter2@db.example.com:5432/prod" }),
+      },
+    });
+    const { status, output } = verify([unpacked]);
+    expect(output).toContain("Postgres connection string with credentials in /electron-dist/config.json");
+    expect(status).not.toBe(0);
+  });
+
+  it("fails when a compiled test file is packaged", async () => {
+    const unpacked = await buildUnpackedApp({
+      localBundle: "complete",
+      asarFiles: { "electron-dist/keyring.test.js": "// test\n" },
+    });
+    const { status, output } = verify([unpacked]);
+    expect(output).toContain("compiled test file (/electron-dist/keyring.test.js)");
+    expect(status).not.toBe(0);
   });
 
   it("fails when resources/local-bundle is missing", async () => {
