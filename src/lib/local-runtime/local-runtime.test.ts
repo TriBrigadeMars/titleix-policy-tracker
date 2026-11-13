@@ -19,6 +19,11 @@ import {
   LOCAL_ADMIN_EMAIL,
 } from "./pglite-bootstrap";
 
+// XDG paths, POSIX 0700 modes and Unix-domain sockets are Linux/macOS
+// behaviour; the Windows build uses a named pipe instead. Gated, not removed:
+// these still run on every non-Windows CI job.
+const ON_WINDOWS = process.platform === "win32";
+
 describe("local-runtime XDG paths & 0700 permissions", () => {
   const tempDirs: string[] = [];
 
@@ -28,7 +33,7 @@ describe("local-runtime XDG paths & 0700 permissions", () => {
     }
   });
 
-  it("uses $XDG_RUNTIME_DIR/titleix-policy-tracker/app.sock on Linux", () => {
+  it.skipIf(ON_WINDOWS)("uses $XDG_RUNTIME_DIR/titleix-policy-tracker/app.sock on Linux", () => {
     const sock = resolveSocketPath(
       { XDG_RUNTIME_DIR: "/run/user/1000" },
       "linux",
@@ -42,7 +47,7 @@ describe("local-runtime XDG paths & 0700 permissions", () => {
     expect(dir).toContain("titleix-policy-tracker-1001");
   });
 
-  it("uses $XDG_DATA_HOME/titleix-policy-tracker on Linux and ~/.local/share fallback", () => {
+  it.skipIf(ON_WINDOWS)("uses $XDG_DATA_HOME/titleix-policy-tracker on Linux and ~/.local/share fallback", () => {
     expect(
       resolveDataDir(
         { XDG_DATA_HOME: "/home/alice/.local/share-custom" },
@@ -56,7 +61,7 @@ describe("local-runtime XDG paths & 0700 permissions", () => {
     );
   });
 
-  it("enforces mode 0700 on runtime and data directories", () => {
+  it.skipIf(ON_WINDOWS)("enforces mode 0700 on runtime and data directories", () => {
     const tmp = path.join(
       os.tmpdir(),
       `titleix-perm-test-${process.pid}-${Date.now()}`
@@ -90,7 +95,7 @@ describe("Unix domain socket server & session cookie injection (zero TCP port)",
     ).toBe("authjs.session-token=secret-tok; theme=dark");
   });
 
-  it("binds exclusively to a Unix socket (string address, no TCP port) and forwards requests with Cookie", async () => {
+  it.skipIf(ON_WINDOWS)("binds exclusively to a Unix socket (string address, no TCP port) and forwards requests with Cookie", async () => {
     const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tix-uds-"));
     tempDirs.push(runtimeRoot);
     const socketPath = path.join(runtimeRoot, "runtime", "app.sock");
