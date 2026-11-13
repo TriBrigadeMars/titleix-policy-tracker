@@ -162,10 +162,12 @@ touch editor-owned fields (`triageStatus`, `relevanceConfidence`).
   non-finite) are shared by all three trigger routes. The routes keep their own
   limits; the handlers are deliberately not merged.
 - **Congress.gov adapter** (`src/lib/ingest/congress.ts`): fetches federal
-  bills from the Congress.gov v3 API, maps each bill to `RawInstrument` via a
+  bills from the Congress.gov v3 API path `/v3/bill/{congress}`, maps each bill to `RawInstrument` via a
   pure `mapCongressBills` function. The identifier is
-  `${type}-${number}-${congress}` (e.g. `HR-1234-119`). Status defaults to
-  `PROPOSED`; editors triage. Requires `CONGRESS_GOV_API_KEY`.
+  `${type}-${number}-${congress}` (e.g. `HR-1234-119`). Derives status from the
+  latest action text ("Became Public Law" maps to `PASSED` with `passedAt`,
+  "Vetoed by President" / "Pocket vetoed" to `VETOED`, "Failed of passage" to
+  `FAILED`); status defaults to `PROPOSED`; editors triage. Requires `CONGRESS_GOV_API_KEY`.
 - **Trigger** (`POST /api/ingest/congress`): ADMIN-only. Optional `?congress=N`.
 - **State adapters** (`src/lib/ingest/openstates.ts`, `src/lib/ingest/legiscan.ts`):
   fetch state bills from OpenStates v3 and LegiScan, deriving the two-letter
