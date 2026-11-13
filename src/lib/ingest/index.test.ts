@@ -6,6 +6,10 @@ const { findMany, upsert, $transaction } = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }));
 
+const txClient = {
+  instrument: { upsert },
+};
+
 vi.mock("@/lib/db", () => ({
   prisma: {
     jurisdiction: { findMany },
@@ -33,8 +37,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   findMany.mockResolvedValue([{ id: "us-1", code: "US" }]);
   upsert.mockResolvedValue({});
-  $transaction.mockImplementation(async (ops: unknown[]) =>
-    Promise.all(ops as Promise<unknown>[])
+  $transaction.mockImplementation(
+    async (fn: (tx: typeof txClient) => Promise<unknown>) => fn(txClient)
   );
 });
 
@@ -119,7 +123,10 @@ describe("upsertInstruments", () => {
   it("runs all upserts inside a single transaction", async () => {
     await upsertInstruments([usRow]);
     expect($transaction).toHaveBeenCalledTimes(1);
-    expect(Array.isArray($transaction.mock.calls[0][0])).toBe(true);
+    expect($transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { timeout: 30_000 }
+    );
   });
 
   it("converts ISO date strings to Date objects and nulls stay null", async () => {
@@ -139,12 +146,7 @@ describe("upsertInstruments", () => {
     const result = await upsertInstruments(rows);
 
     expect($transaction).toHaveBeenCalledTimes(3);
-    expect(
-      ($transaction.mock.calls[0][0] as unknown[]).length
-    ).toBe(INGEST_CHUNK_SIZE);
-    expect(
-      ($transaction.mock.calls[2][0] as unknown[]).length
-    ).toBe(1);
+    expect(upsert).toHaveBeenCalledTimes(101);
     expect(result).toEqual({ total: 101, upserted: 101, skipped: 0 });
   });
 
@@ -154,12 +156,56 @@ describe("upsertInstruments", () => {
       identifier: `HR-${i}-119`,
     }));
     $transaction
-      .mockImplementationOnce(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[]))
+      .mockImplementationOnce(async (fn: (tx: typeof txClient) => Promise<unknown>) => fn(txClient))
       .mockRejectedValueOnce(new Error("btree index row size exceeds maximum"));
 
     await expect(upsertInstruments(rows)).rejects.toThrow(
       /btree index row size exceeds maximum/
     );
+    expect($transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects and does not count upserted when the third upsert of a chunk rejects", async () => {
+    const rows = [
+      { ...usRow, identifier: "HR-1-119" },
+      { ...usRow, identifier: "HR-2-119" },
+      { ...usRow, identifier: "HR-3-119" },
+      { ...usRow, identifier: "HR-4-119" },
+    ];
+    upsert
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("third upsert failed"));
+
+    await expect(upsertInstruments(rows)).rejects.toThrow("third upsert failed");
+    expect(upsert).toHaveBeenCalledTimes(3);
+  });
+
+  it("commits earlier chunk and does not count upserted for failing chunk when third upsert rejects", async () => {
+    const chunk1Rows = Array.from({ length: INGEST_CHUNK_SIZE }, (_, i) => ({
+      ...usRow,
+      identifier: `HR-1-${i}-119`,
+    }));
+    const chunk2Rows = [
+      { ...usRow, identifier: "HR-2-1-119" },
+      { ...usRow, identifier: "HR-2-2-119" },
+      { ...usRow, identifier: "HR-2-3-119" },
+      { ...usRow, identifier: "HR-2-4-119" },
+    ];
+
+    let count = 0;
+    upsert.mockImplementation(async () => {
+      count += 1;
+      if (count === INGEST_CHUNK_SIZE + 3) {
+        throw new Error("third upsert of second chunk failed");
+      }
+      return {};
+    });
+
+    await expect(
+      upsertInstruments([...chunk1Rows, ...chunk2Rows])
+    ).rejects.toThrow("third upsert of second chunk failed");
+
     expect($transaction).toHaveBeenCalledTimes(2);
   });
 });

@@ -40,6 +40,14 @@ export function resolveDatabaseMode(options: DatabaseModeOptions): DatabaseMode 
 
 export const getDatabaseMode = resolveDatabaseMode;
 
+function rejectBatchTransaction(arg: unknown): void {
+  if (Array.isArray(arg)) {
+    throw new Error(
+      "Batch $transaction([...]) is not supported; use the interactive form"
+    );
+  }
+}
+
 function getEmbeddedPrisma(inMemory: boolean): Promise<PrismaClient> {
   if (!globalThis.__localDbHandlePromise) {
     globalThis.__localDbHandlePromise = bootstrapLocalPGlite({ inMemory });
@@ -81,15 +89,14 @@ function createPostgresPrisma(): PrismaClient {
       if (prop === "then") return undefined;
 
       if (prop === "$transaction") {
-        return async (arg: unknown) => {
-          if (Array.isArray(arg)) {
-            return Promise.all(arg);
-          }
+        return async (arg: unknown, options?: unknown) => {
+          rejectBatchTransaction(arg);
           return (
             realClient.$transaction as unknown as (
-              fn: unknown
+              fn: unknown,
+              opt?: unknown
             ) => Promise<unknown>
-          )(arg);
+          )(arg, options);
         };
       }
 
@@ -131,16 +138,15 @@ function createEmbeddedPrisma(inMemory: boolean): PrismaClient {
       if (prop === "then") return undefined;
 
       if (prop === "$transaction") {
-        return async (arg: unknown) => {
+        return async (arg: unknown, options?: unknown) => {
+          rejectBatchTransaction(arg);
           const embedded = await getEmbeddedPrisma(inMemory);
-          if (Array.isArray(arg)) {
-            return Promise.all(arg);
-          }
           return (
             embedded.$transaction as unknown as (
-              fn: unknown
+              fn: unknown,
+              opt?: unknown
             ) => Promise<unknown>
-          )(arg);
+          )(arg, options);
         };
       }
 

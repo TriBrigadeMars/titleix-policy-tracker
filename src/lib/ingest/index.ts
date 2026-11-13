@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 import type { Instrument } from "@/types";
 
@@ -65,6 +67,7 @@ export function chunk<T>(items: T[], size = INGEST_CHUNK_SIZE): T[][] {
 }
 
 function upsertOperation(
+  tx: Prisma.TransactionClient,
   row: RawInstrument & { jurisdictionId: string },
   now: Date
 ) {
@@ -91,7 +94,7 @@ function upsertOperation(
   if (passedAt) updateData.passedAt = passedAt;
   if (effectiveAt) updateData.effectiveAt = effectiveAt;
 
-  return prisma.instrument.upsert({
+  return tx.instrument.upsert({
     where: {
       jurisdictionId_type_identifier: {
         jurisdictionId: row.jurisdictionId,
@@ -163,15 +166,26 @@ export async function upsertInstruments(
 
   for (const batch of chunk(rows)) {
     // Resolve jurisdiction ids per chunk; drop rows whose code is unknown.
-    const operations = batch.flatMap((row) => {
+    const resolved: Array<RawInstrument & { jurisdictionId: string }> = [];
+    for (const row of batch) {
       const jurisdictionId = codeToId.get(row.jurisdictionCode);
-      if (!jurisdictionId) return [];
-      upserted += 1;
-      return [upsertOperation({ ...row, jurisdictionId }, now)];
-    });
+      if (jurisdictionId) {
+        resolved.push({ ...row, jurisdictionId });
+      }
+    }
 
-    if (operations.length === 0) continue;
-    await prisma.$transaction(operations);
+    if (resolved.length === 0) continue;
+
+    await prisma.$transaction(
+      async (tx) => {
+        for (const row of resolved) {
+          await upsertOperation(tx, row, now);
+        }
+      },
+      { timeout: 30_000 }
+    );
+
+    upserted += resolved.length;
   }
 
   return {

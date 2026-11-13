@@ -151,10 +151,10 @@ touch editor-owned fields (`triageStatus`, `relevanceConfidence`).
   leaves the stored value alone instead of clearing it. Only a reported value
   overwrites.
 - **Chunked writes:** rows are written in `INGEST_CHUNK_SIZE` (50) row
-  `$transaction`s, one transaction per chunk. A chunk that throws leaves earlier
-  chunks committed and the error is rethrown, never swallowed. Retrying the same
-  ingest is safe because the write is idempotent (unique key + machine-only
-  update path), so a retry converges instead of duplicating rows.
+  interactive `$transaction`s, one transaction per chunk. A chunk that throws
+  leaves earlier chunks committed and the error is rethrown, never swallowed.
+  Retrying the same ingest is safe because the write is idempotent (unique key +
+  machine-only update path), so a retry converges instead of duplicating rows.
 - **Fetch timeout:** adapters abort upstream calls after `FETCH_TIMEOUT_MS`
   (10s) via `AbortSignal.timeout()`, so a hung API cannot stall an ingest.
 - **Shared route plumbing** (`src/lib/ingest/route-helpers.ts`):
