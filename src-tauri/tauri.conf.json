@@ -39,7 +39,7 @@
     "resources": {
       "../local-bundle/**/*": "local-bundle/"
     },
-    "category": "Office",
+    "category": "Education",
     "shortDescription": "Track proposed and passed laws impacting Title IX across the United States.",
     "linux": {
       "deb": {
