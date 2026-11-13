@@ -15,10 +15,13 @@ jobs:
       LEGISCAN_API_KEY: ${{ secrets.LEGISCAN_API_KEY }}
       LEGISCAN_SESSION_ID: ${{ secrets.LEGISCAN_SESSION_ID }}
       INGEST_CONGRESS: "119"
+      # *_LIMIT / *_CAP count Title IX candidates kept, not bills fetched.
       INGEST_CONGRESS_LIMIT: "100"
       INGEST_OPENSTATES_JURISDICTIONS: "ca,tx"
       INGEST_OPENSTATES_CAP: "50"
       INGEST_LEGISCAN_LIMIT: "100"
+      # Pages requested per source per run (Congress.gov 250/page, OpenStates 20/page).
+      INGEST_MAX_PAGES: "20"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

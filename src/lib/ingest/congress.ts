@@ -151,9 +151,24 @@ export const congressAdapter: IngestAdapter = {
       );
     }
 
+    // `fromDateTime` filters on the bill's update date. The vendor spec gives
+    // the format as YYYY-MM-DDTHH:MM:SSZ; anything else is rejected here rather
+    // than silently ignored upstream.
+    const fromDateTime = opts?.fromDateTime;
+    if (
+      fromDateTime !== undefined &&
+      (typeof fromDateTime !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(fromDateTime))
+    ) {
+      throw new Error("fromDateTime must be formatted YYYY-MM-DDTHH:MM:SSZ");
+    }
+
     let url = `${CONGRESS_GOV_BILLS_URL}/${congress}?format=json&limit=${limit}`;
     if (offset > 0) {
       url += `&offset=${offset}`;
+    }
+    if (fromDateTime) {
+      url += `&fromDateTime=${encodeURIComponent(fromDateTime)}`;
     }
     url += `&api_key=${encodeURIComponent(apiKey)}`;
 

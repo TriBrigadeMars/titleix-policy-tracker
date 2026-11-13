@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
-import { upsertInstruments, type RawInstrument } from "./index";
-import { selectCandidates } from "./candidate-filter";
+import { upsertInstruments } from "./index";
+import type { CandidateScan } from "./candidate-filter";
+
+export type { CandidateScan } from "./candidate-filter";
 
 export interface IngestPipelineResult {
   total: number;
@@ -26,21 +28,23 @@ export function classifyIngestError(error: unknown): string {
 }
 
 /**
- * Fetch, drop non-candidates, upsert, and persist a run record. Fetch and
- * write failures are recorded as FAILED with an error class (never the raw
- * message, which can carry keys or URLs) and then rethrown.
+ * Fetch already-filtered candidates, upsert them, and persist a run record.
+ * Filtering belongs to the fetch step so that caps apply to kept rows, never to
+ * raw rows before the keyword filter. Fetch and write failures are recorded as
+ * FAILED with an error class (never the raw message, which can carry keys or
+ * URLs) and then rethrown.
  */
 export async function runIngest(
   source: string,
-  fetchRows: () => Promise<RawInstrument[]>
+  fetchCandidates: () => Promise<CandidateScan>
 ): Promise<IngestPipelineResult> {
   const run = await prisma.ingestRun.create({
     data: { source, status: "RUNNING" },
   });
 
   try {
-    const rows = await fetchRows();
-    const { kept, dropped } = selectCandidates(rows);
+    const { kept, scanned } = await fetchCandidates();
+    const dropped = Math.max(0, scanned - kept.length);
     const result = await upsertInstruments(kept);
     const finished = await prisma.ingestRun.update({
       where: { id: run.id },
@@ -53,7 +57,7 @@ export async function runIngest(
       },
     });
     return {
-      total: rows.length,
+      total: scanned,
       upserted: result.upserted,
       skipped: result.skipped,
       dropped,
@@ -86,4 +90,21 @@ export async function recordSkippedIngest(
       errorClass,
     },
   });
+}
+
+/**
+ * Start time of the newest successful run for `source`, or null if there is
+ * none. The start time (not the finish time) is the safe lower bound for the
+ * next incremental fetch: anything updated while that run was in flight is
+ * picked up again rather than missed.
+ */
+export async function getLastSuccessfulRunAt(
+  source: string
+): Promise<Date | null> {
+  const run = await prisma.ingestRun.findFirst({
+    where: { source, status: "SUCCESS", finishedAt: { not: null } },
+    orderBy: { finishedAt: "desc" },
+    select: { startedAt: true },
+  });
+  return run?.startedAt ?? null;
 }

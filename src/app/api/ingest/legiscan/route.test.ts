@@ -42,13 +42,13 @@ const base = "http://localhost/api/ingest/legiscan";
 beforeEach(() => {
   vi.clearAllMocks();
   fetch.mockResolvedValue([]);
-  runIngest.mockImplementation(async (_source: string, fetchRows: () => Promise<unknown[]>) => {
-    const rows = await fetchRows();
+  runIngest.mockImplementation(async (_source: string, fetchCandidates: () => Promise<{ kept: unknown[]; scanned: number }>) => {
+    const { kept, scanned } = await fetchCandidates();
     return {
-      total: rows.length,
-      upserted: rows.length,
+      total: scanned,
+      upserted: kept.length,
       skipped: 0,
-      dropped: 0,
+      dropped: scanned - kept.length,
       runId: "run-1",
     };
   });
@@ -94,7 +94,7 @@ describe("POST /api/ingest/legiscan — ADMIN", () => {
         jurisdictionCode: "CA",
         type: "BILL",
         identifier: "CA-AB1",
-        title: "A bill",
+        title: "A Title IX bill",
         status: "PROPOSED",
         introducedAt: null,
         passedAt: null,
@@ -115,6 +115,43 @@ describe("POST /api/ingest/legiscan — ADMIN", () => {
       dropped: 0,
       runId: "run-1",
     });
+  });
+
+  it("applies limit to kept rows after filtering the whole session", async () => {
+    signIn(ADMIN);
+    const row = (identifier: string, title: string) => ({
+      jurisdictionCode: "CA",
+      type: "BILL",
+      identifier,
+      title,
+      status: "PROPOSED",
+      introducedAt: null,
+      passedAt: null,
+      effectiveAt: null,
+      sourceUrl: null,
+      rawSummary: null,
+    });
+    fetch.mockResolvedValue([
+      row("CA-AB1", "Highway funding"),
+      row("CA-AB2", "Water rights"),
+      row("CA-AB3", "Title IX coordinator training"),
+      row("CA-AB4", "Sexual harassment in schools"),
+    ]);
+
+    const response = await POST(post(`${base}?id=1541&limit=1`));
+
+    // The adapter is never asked to truncate before the keyword filter.
+    expect(fetch).toHaveBeenCalledWith({ id: "1541" });
+    expect(await response.json()).toMatchObject({
+      total: 4,
+      upserted: 1,
+      dropped: 3,
+      limit: 1,
+    });
+    const scan = await runIngest.mock.calls[0][1]();
+    expect(scan.kept.map((r: { identifier: string }) => r.identifier)).toEqual([
+      "CA-AB3",
+    ]);
   });
 
   it("returns 502 when the adapter fetch fails", async () => {

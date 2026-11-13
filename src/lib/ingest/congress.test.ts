@@ -362,6 +362,38 @@ describe("congressAdapter.fetch", () => {
     expect(url).toContain("offset=50");
   });
 
+  it("adds fromDateTime for an incremental fetch", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({ ok: true, json: async () => response() });
+
+    await congressAdapter.fetch({
+      congress: 119,
+      limit: 250,
+      fromDateTime: "2026-11-11T12:00:00Z",
+    });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(new URL(url).searchParams.get("fromDateTime")).toBe(
+      "2026-11-11T12:00:00Z"
+    );
+  });
+
+  it("omits fromDateTime when not given", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({ ok: true, json: async () => response() });
+
+    await congressAdapter.fetch({ congress: 119, limit: 250 });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(new URL(url).searchParams.has("fromDateTime")).toBe(false);
+  });
+
+  it("rejects a fromDateTime in any other format before fetching", async () => {
+    process.env.CONGRESS_GOV_API_KEY = "test-key";
+    await expect(
+      congressAdapter.fetch({ fromDateTime: "2026-11-11T12:00:00.000Z" })
+    ).rejects.toThrow(/fromDateTime/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("throws on a non-ok response", async () => {
     process.env.CONGRESS_GOV_API_KEY = "test-key";
     fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });

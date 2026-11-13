@@ -109,6 +109,22 @@ export const openStatesAdapter: IngestAdapter = {
     if (opts?.page !== undefined && Number(opts.page) > 1) {
       params.set("page", String(opts.page));
     }
+    if (opts?.sort !== undefined && opts.sort !== "") {
+      params.set("sort", String(opts.sort));
+    }
+    // The server parses this with Python 3.9 `datetime.fromisoformat`, which
+    // rejects a trailing "Z" and JavaScript's milliseconds, so only a plain
+    // YYYY-MM-DDTHH:MM:SS (UTC) value is accepted here.
+    const updatedSince = opts?.updatedSince;
+    if (updatedSince !== undefined) {
+      if (
+        typeof updatedSince !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(updatedSince)
+      ) {
+        throw new Error("updatedSince must be formatted YYYY-MM-DDTHH:MM:SS");
+      }
+      params.set("updated_since", updatedSince);
+    }
 
     const url = `${OPEN_STATES_BILLS_URL}?${params.toString()}`;
     const apiKey = process.env.OPEN_STATES_API_KEY;
