@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
@@ -11,6 +12,12 @@ import { listenOnUnixSocket } from "../src/lib/local-runtime/uds-http";
 
 async function startLocalServer(): Promise<void> {
   process.env.TITLEIX_LOCAL_MODE = "1";
+  // The desktop shells pass a fresh AUTH_SECRET per launch. When this script
+  // is run by hand (`npm run local:server`) nothing does, and Auth.js refuses
+  // to start in production without one, so generate one for this process.
+  if (!process.env.AUTH_SECRET?.trim()) {
+    process.env.AUTH_SECRET = crypto.randomBytes(32).toString("hex");
+  }
   const appDir = process.env.TITLEIX_APP_DIR
     ? path.resolve(process.env.TITLEIX_APP_DIR)
     : process.cwd();

@@ -35,6 +35,19 @@ npm run db:generate
 npm run dev
 ```
 
+**`AUTH_SECRET` is required in production.** Auth.js signs its CSRF token and
+OAuth state cookies with it. `npm run dev`, the tests and `npm run build` fall
+back to a public development secret when it is unset, but `npm run start` (any
+`NODE_ENV=production` server) refuses to handle requests without it. Generate
+one per deployment and keep it out of the repository:
+
+```bash
+openssl rand -hex 32
+```
+
+The desktop apps and `npm run local:server` generate a fresh secret on every
+launch, so they need no configuration.
+
 <details>
 <summary>Windows PowerShell Quick Start</summary>
 
