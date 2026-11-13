@@ -71,3 +71,18 @@ export function selectCandidates(rows: RawInstrument[]): {
   }
   return { kept, dropped };
 }
+
+/**
+ * Rows that passed the Title IX candidate filter, plus how many raw rows were
+ * examined to find them. `scanned - kept.length` is what a run records as
+ * `dropped`.
+ */
+export interface CandidateScan {
+  kept: RawInstrument[];
+  scanned: number;
+}
+
+/** Filter an already-fetched list. For callers that fetch a single page. */
+export function filterCandidates(rows: RawInstrument[]): CandidateScan {
+  return { kept: selectCandidates(rows).kept, scanned: rows.length };
+}

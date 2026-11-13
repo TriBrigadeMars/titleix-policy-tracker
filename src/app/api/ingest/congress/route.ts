@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-guards";
 import { congressAdapter } from "@/lib/ingest/congress";
+import { filterCandidates } from "@/lib/ingest/candidate-filter";
 import { runIngest } from "@/lib/ingest/pipeline";
 import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
@@ -14,7 +15,8 @@ const DEFAULT_LIMIT = 50;
  *
  * Query params:
  *   congress – congress number (default 119)
- *   limit    – max bills to ingest (default 50, capped at 100)
+ *   limit    – bills fetched, one page (default 50, capped at 100); only
+ *              Title IX candidates from that page are upserted
  */
 export async function POST(request: Request) {
   const guard = await requireRole("ADMIN");
@@ -30,8 +32,9 @@ export async function POST(request: Request) {
   );
 
   try {
-    const result = await runIngest(congressAdapter.name, () =>
-      congressAdapter.fetch({ congress, limit })
+    // One page; the keyword filter runs on the whole page before upsert.
+    const result = await runIngest(congressAdapter.name, async () =>
+      filterCandidates(await congressAdapter.fetch({ congress, limit }))
     );
     return NextResponse.json({
       source: congressAdapter.name,

@@ -179,10 +179,35 @@ touch editor-owned fields (`triageStatus`, `relevanceConfidence`).
     per request).
   - `POST /api/ingest/legiscan` — ADMIN-only, keyed by `LEGISCAN_API_KEY`.
     `id` (session id) takes precedence over `state`. `limit` is opt-in for admin
-    testing; omitted, it ingests the entire session because `getMasterList` is a
-    full session dump.
+    testing and caps kept candidates after the whole session is filtered;
+    omitted, every candidate in the session is kept.
   - All three adapters **fail closed** when their API key is missing rather than
     issuing an unkeyed request.
+- **Scheduled ingest** (`src/lib/ingest/schedule.ts`, `npm run ingest:scheduled`,
+  `.github/workflows/ingest.yml`): caps count **kept** Title IX candidates, not
+  raw rows, so the keyword filter always sees every row that was fetched.
+  - Congress.gov and OpenStates are paged by `scanForCandidates`, which filters
+    each page as it arrives and stops at whichever comes first: the kept cap,
+    the page budget (`INGEST_MAX_PAGES`, default 20), or a short page.
+    Congress.gov pages are 250 rows (documented maximum); OpenStates pages are
+    20 rows (the server rejects more) with at least 1s between requests.
+  - Incremental: each source passes the start time of its last `SUCCESS` run
+    (`getLastSuccessfulRunAt`) as a since-filter — Congress.gov
+    `fromDateTime` (`YYYY-MM-DDTHH:MM:SSZ`), OpenStates `updated_since`
+    (`YYYY-MM-DDTHH:MM:SS`, UTC) with `sort=updated_desc`. With no previous
+    success the filter is omitted. Congress.gov has no sort parameter on
+    `/bill/{congress}` and returns bills by latest action date.
+  - Run records are keyed `congress.gov:<congress>` and `openstates:<state>`,
+    so admin one-page ingests (recorded as `congress.gov` / `openstates`)
+    never move the scheduled cursor.
+  - LegiScan's `getMasterList` is one response: the whole session is filtered,
+    then the cap applies to kept rows.
+  - `runIngest` takes a fetch step that returns already-filtered
+    `{ kept, scanned }`; the run records `dropped = scanned - kept`. The admin
+    routes filter with `filterCandidates` before handing rows over; the
+    LegiScan route's `limit` caps kept rows after filtering.
+  - Known gap: bills older than the first run's page budget, and never updated
+    since, are not backfilled by later incremental runs.
 - **Error contract:** upstream failures return `502` with a generic body
   (`Ingest failed. Check server logs for details.`). Real errors — which can
   carry API keys or internal URLs — are logged server-side only.

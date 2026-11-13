@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RawInstrument } from "@/lib/ingest";
 
-const { create, update, upsertInstruments } = vi.hoisted(() => ({
+const { create, update, findFirst, upsertInstruments } = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
+  findFirst: vi.fn(),
   upsertInstruments: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   prisma: {
-    ingestRun: { create, update },
+    ingestRun: { create, update, findFirst },
   },
 }));
 
@@ -17,7 +18,12 @@ vi.mock("@/lib/ingest", () => ({
   upsertInstruments,
 }));
 
-import { classifyIngestError, runIngest } from "./pipeline";
+import { filterCandidates } from "./candidate-filter";
+import {
+  classifyIngestError,
+  getLastSuccessfulRunAt,
+  runIngest,
+} from "./pipeline";
 
 const keptRow: RawInstrument = {
   jurisdictionCode: "US",
@@ -64,10 +70,9 @@ describe("classifyIngestError", () => {
 
 describe("runIngest", () => {
   it("drops non-candidates, upserts the rest, and records SUCCESS", async () => {
-    const result = await runIngest("congress.gov", async () => [
-      keptRow,
-      droppedRow,
-    ]);
+    const result = await runIngest("congress.gov", async () =>
+      filterCandidates([keptRow, droppedRow])
+    );
 
     expect(upsertInstruments).toHaveBeenCalledWith([keptRow]);
     expect(update).toHaveBeenCalledWith({
@@ -88,11 +93,25 @@ describe("runIngest", () => {
     });
   });
 
+  it("records dropped as scanned minus kept", async () => {
+    const result = await runIngest("openstates:ca", async () => ({
+      kept: [keptRow],
+      scanned: 400,
+    }));
+
+    expect(upsertInstruments).toHaveBeenCalledWith([keptRow]);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "run-1" },
+      data: expect.objectContaining({ status: "SUCCESS", dropped: 399 }),
+    });
+    expect(result).toMatchObject({ total: 400, dropped: 399 });
+  });
+
   it("records FAILED with an error class and rethrows", async () => {
     upsertInstruments.mockRejectedValue(new Error("P2002 unique"));
 
     await expect(
-      runIngest("congress.gov", async () => [keptRow])
+      runIngest("congress.gov", async () => filterCandidates([keptRow]))
     ).rejects.toThrow(/P2002/);
 
     expect(update).toHaveBeenCalledWith({
@@ -119,5 +138,28 @@ describe("runIngest", () => {
         errorClass: "MissingApiKey",
       }),
     });
+  });
+});
+
+describe("getLastSuccessfulRunAt", () => {
+  it("returns the start of the newest finished SUCCESS run for the source", async () => {
+    const startedAt = new Date("2026-11-11T12:00:00Z");
+    findFirst.mockResolvedValue({ startedAt });
+
+    await expect(getLastSuccessfulRunAt("openstates:ca")).resolves.toBe(startedAt);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        source: "openstates:ca",
+        status: "SUCCESS",
+        finishedAt: { not: null },
+      },
+      orderBy: { finishedAt: "desc" },
+      select: { startedAt: true },
+    });
+  });
+
+  it("returns null when the source has never succeeded", async () => {
+    findFirst.mockResolvedValue(null);
+    await expect(getLastSuccessfulRunAt("congress.gov:119")).resolves.toBeNull();
   });
 });

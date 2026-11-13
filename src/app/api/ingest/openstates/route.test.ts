@@ -49,13 +49,13 @@ const base = "http://localhost/api/ingest/openstates";
 beforeEach(() => {
   vi.clearAllMocks();
   fetch.mockResolvedValue([]);
-  runIngest.mockImplementation(async (_source: string, fetchRows: () => Promise<unknown[]>) => {
-    const rows = await fetchRows();
+  runIngest.mockImplementation(async (_source: string, fetchCandidates: () => Promise<{ kept: unknown[]; scanned: number }>) => {
+    const { kept, scanned } = await fetchCandidates();
     return {
-      total: rows.length,
-      upserted: rows.length,
+      total: scanned,
+      upserted: kept.length,
       skipped: 0,
-      dropped: 0,
+      dropped: scanned - kept.length,
       runId: "run-1",
     };
   });
@@ -90,7 +90,7 @@ describe("POST /api/ingest/openstates — ADMIN", () => {
         jurisdictionCode: "NC",
         type: "BILL",
         identifier: "NC-2023-SB 113",
-        title: "A bill",
+        title: "A Title IX bill",
         status: "PROPOSED",
         introducedAt: null,
         passedAt: null,

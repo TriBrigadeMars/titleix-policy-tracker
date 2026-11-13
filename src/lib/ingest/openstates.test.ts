@@ -167,6 +167,32 @@ describe("openStatesAdapter.fetch", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("passes sort and updated_since through", async () => {
+    process.env.OPEN_STATES_API_KEY = "test-key";
+    fetchMock.mockResolvedValue({ ok: true, json: async () => response() });
+
+    await openStatesAdapter.fetch({
+      jurisdiction: "ca",
+      limit: 20,
+      sort: "updated_desc",
+      updatedSince: "2026-11-11T12:00:00",
+    });
+    const params = new URL((fetchMock.mock.calls[0] as [string])[0]).searchParams;
+    expect(params.get("sort")).toBe("updated_desc");
+    expect(params.get("updated_since")).toBe("2026-11-11T12:00:00");
+  });
+
+  it("rejects an updatedSince the server cannot parse, before fetching", async () => {
+    process.env.OPEN_STATES_API_KEY = "test-key";
+    await expect(
+      openStatesAdapter.fetch({
+        jurisdiction: "ca",
+        updatedSince: "2026-11-11T12:00:00Z",
+      })
+    ).rejects.toThrow(/updatedSince/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("requests page when greater than 1", async () => {
     process.env.OPEN_STATES_API_KEY = "test-key";
     fetchMock.mockResolvedValue({
