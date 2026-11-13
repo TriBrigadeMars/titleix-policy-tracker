@@ -23,7 +23,7 @@ jobs:
       - name: Install system packaging tools (rpm, squashfs, fuse)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm squashfs-tools libfuse2t64 bsdtar
+          sudo apt-get install -y --no-install-recommends rpm squashfs-tools libfuse2t64 libarchive-tools
 
       - run: npm ci
       - run: npm run db:generate
@@ -70,6 +70,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
+            dpkg-dev \
             rpm
 
       - run: npm ci
@@ -82,7 +83,23 @@ jobs:
         run: cargo test
 
       - name: Build Rust / Tauri Linux bundles (AppImage, deb, rpm)
-        run: npm run tauri:build
+        env:
+          # linuxdeploy bundles binutils 2.35 strip, which exits on Ubuntu 24.04
+          # glibc RELR sections (.relr.dyn). At the default log level Tauri
+          # discards that stderr and reports only "failed to run linuxdeploy".
+          NO_STRIP: "true"
+        run: |
+          # Next's standalone trace copies sharp-linux-x64.node out of its
+          # package. linuxdeploy follows that addon and cannot see the
+          # vendored libvips it links against unless this directory is on
+          # the library path.
+          vips_lib="${GITHUB_WORKSPACE}/node_modules/@img/sharp-libvips-linux-x64/lib"
+          if ! compgen -G "${vips_lib}/libvips-cpp.so*" > /dev/null; then
+            echo "Vendored libvips not found at ${vips_lib}" >&2
+            exit 1
+          fi
+          export LD_LIBRARY_PATH="${vips_lib}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+          npm run tauri:build -- --verbose
 
       - name: Upload Rust / Tauri AppImage & distro packages
         uses: actions/upload-artifact@v4

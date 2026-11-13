@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Title IX Policy Tracker",
         "url": "app://tracker/",
         "width": 1400,
@@ -36,9 +37,9 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../local-bundle/**/*": "local-bundle/"
+      "../local-bundle/": "local-bundle/"
     },
-    "category": "Office",
+    "category": "Education",
     "shortDescription": "Track proposed and passed laws impacting Title IX across the United States.",
     "linux": {
       "deb": {

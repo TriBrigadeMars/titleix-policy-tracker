@@ -72,37 +72,45 @@ pub fn run() {
                 server: Arc::new(server),
             });
 
-            if let Some(win) = app.get_webview_window("main") {
-                let pkg_version = app.package_info().version.to_string();
-                let platform = std::env::consts::OS;
-                let init_js = format!(
-                    "Object.defineProperty(window, 'titleIXDesktop', {{ value: Object.freeze({{ platform: '{platform}', version: '{pkg_version}' }}), configurable: false, writable: false }});"
-                );
-                let _ = win.eval(&init_js);
-            }
+            // The main window is created here instead of by Tauri's startup
+            // (see `"create": false` in tauri.conf.json) so that the navigation
+            // handler can be attached to the webview. `tauri::Builder` has no
+            // `on_navigation` hook; it only exists on webview builders.
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or_else(|| std::io::Error::other("main window config is missing"))?;
+            let app_handle = app.handle().clone();
+
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .on_navigation(move |url| {
+                    let action = classify_url(url.as_str(), LOCAL_APP_URL, &[], false);
+                    match action {
+                        UrlAction::Allow => true,
+                        UrlAction::OpenExternal => {
+                            if is_safe_external_url(url.as_str()) {
+                                let _ = app_handle.shell().open(url.as_str(), None);
+                            }
+                            false
+                        }
+                        UrlAction::Block => false,
+                    }
+                })
+                .on_page_load(|webview, _payload| {
+                    let pkg_version = webview.app_handle().package_info().version.to_string();
+                    let platform = std::env::consts::OS;
+                    let init_js = format!(
+                        "if (!window.titleIXDesktop) {{ Object.defineProperty(window, 'titleIXDesktop', {{ value: Object.freeze({{ platform: '{platform}', version: '{pkg_version}' }}), configurable: false, writable: false }}); }}"
+                    );
+                    let _ = webview.eval(&init_js);
+                })
+                .build()?;
 
             Ok(())
-        })
-        .on_page_load(|webview, _payload| {
-            let pkg_version = webview.app_handle().package_info().version.to_string();
-            let platform = std::env::consts::OS;
-            let init_js = format!(
-                "if (!window.titleIXDesktop) {{ Object.defineProperty(window, 'titleIXDesktop', {{ value: Object.freeze({{ platform: '{platform}', version: '{pkg_version}' }}), configurable: false, writable: false }}); }}"
-            );
-            let _ = webview.eval(&init_js);
-        })
-        .on_navigation(|webview, url| {
-            let action = classify_url(url.as_str(), LOCAL_APP_URL, &[], false);
-            match action {
-                UrlAction::Allow => true,
-                UrlAction::OpenExternal => {
-                    if is_safe_external_url(url.as_str()) {
-                        let _ = webview.app_handle().shell().open(url.as_str(), None);
-                    }
-                    false
-                }
-                UrlAction::Block => false,
-            }
         })
         .build(tauri::generate_context!())
         .expect("error while building Title IX Policy Tracker Rust shell")
