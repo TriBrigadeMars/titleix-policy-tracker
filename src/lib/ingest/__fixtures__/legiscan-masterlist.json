@@ -1,0 +1,54 @@
+{
+  "status": "OK",
+  "masterlist": {
+    "0": {
+      "bill_id": 2111266,
+      "number": "HB0001",
+      "change_hash": "341302dfa2e8a1c403a8135a4098f7dc",
+      "url": "https://legiscan.com/WY/bill/HB0001/2026",
+      "status_date": "2026-02-21",
+      "status": 2,
+      "last_action_date": "2026-03-02",
+      "last_action": "See Mirror Bill SF0001",
+      "title": "General government appropriations-2.",
+      "description": "AN ACT to make appropriations for the fiscal biennium commencing July 1, 2026 and ending June 30, 2028; providing definitions; providing for appropriations and transfers of funds for the period of the budget and for the remainder of the current biennium ending June 30, 2026 as specified; providing for carryover of certain funds beyond the biennium as specified; providing for employee positions as specified; providing for duties, terms and conditions and other requirements relating to appropriations for the remainder of the current biennium ending June 30, 2026 and the period of the budget as specified; providing for position and other budgetary limitations; amending existing law by redirecting revenues for the period of the budget; continuing an account; authorizing loans; discharging interfund loans; increasing higher education scholarship amounts for the fiscal biennium commencing July 1, 2026 and ending June 30, 2028; making conforming amendments; amending and repealing prior appropriations; and providing for effective dates."
+    },
+    "1": {
+      "bill_id": 2055019,
+      "number": "HB0002",
+      "change_hash": "5eb19b83b684f6a2cf487524d6331a28",
+      "url": "https://legiscan.com/WY/bill/HB0002/2026",
+      "status_date": "2026-03-05",
+      "status": 4,
+      "last_action_date": "2026-03-05",
+      "last_action": "Assigned Chapter Number 42",
+      "title": "Fast Track Permits Act. ",
+      "description": "AN ACT relating to city, county, state and local powers; requiring local government entities to comply with deadlines for reviewing specified residential building permits; allowing deadlines to be suspended and extended as specified; requiring local government entities to provide notice; providing definitions; providing penalties; specifying applicability; and providing for an effective date."
+    },
+    "2": {
+      "bill_id": 2054649,
+      "number": "HB0003",
+      "change_hash": "65998ae9e57db19c5d94b797dfa1d58f",
+      "url": "https://legiscan.com/WY/bill/HB0003/2026",
+      "status_date": "2026-03-06",
+      "status": 4,
+      "last_action_date": "2026-03-06",
+      "last_action": "Assigned Chapter Number 62",
+      "title": "Wyoming pregnancy centers-autonomy and rights.",
+      "description": "AN ACT relating to public health and safety; providing legislative findings; prohibiting the state and specified governmental entities from adopting any law, rule or policy that targets pregnancy centers for oversight or regulation based on the centers' stance against abortion; providing definitions; providing penalties; making conforming amendments; and providing for an effective date."
+    },
+    "session": {
+      "session_id": 2213,
+      "state_id": 50,
+      "year_start": 2026,
+      "year_end": 2026,
+      "prefile": 0,
+      "sine_die": 1,
+      "prior": 0,
+      "special": 0,
+      "session_tag": "Regular Session",
+      "session_title": "2026 Regular Session",
+      "session_name": "2026 Budget Session"
+    }
+  }
+}
