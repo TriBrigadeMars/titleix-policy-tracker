@@ -9,6 +9,19 @@
 - **Auth:** NextAuth.js v5 (Auth.js) with Google OAuth
 - **Styling:** Tailwind CSS + shadcn/ui
 
+### Database Runtime & Connection Modes
+
+The database client (`src/lib/db.ts`) resolves its operational mode once at startup based on the environment:
+
+| Situation | Client |
+|-----------|--------|
+| `TITLEIX_LOCAL_MODE=1` | Embedded PGlite on disk (unchanged) |
+| `DATABASE_URL` set | Real Postgres. Errors propagate. Never falls back. |
+| No `DATABASE_URL`, `NODE_ENV !== "production"` | Embedded in-memory (dev and test convenience, unchanged) |
+| No `DATABASE_URL`, `NODE_ENV === "production"`, not local mode | Throw a clear error on first query |
+
+Silent failover to an in-memory database on connection error is prevented: when `DATABASE_URL` is configured, connection or runtime errors propagate directly rather than degrading into a temporary database that drops writes. In production without `DATABASE_URL`, queries reject on first use (`DATABASE_URL is not set. Refusing to start without a database in production.`), while module imports remain non-throwing to support static build steps (`next build`).
+
 ## Domain Model
 
 ### Jurisdictions
