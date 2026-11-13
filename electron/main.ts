@@ -41,6 +41,8 @@ import {
   isSafeExternalUrl,
 } from "./security";
 import { resolveInitialBounds, type WindowBounds } from "./window-state";
+import { describeSkipReason } from "./update-policy";
+import { initAutoUpdates, resolveUpdatePlan } from "./updater";
 
 export const MIN_ZOOM_FACTOR = 0.5;
 export const MAX_ZOOM_FACTOR = 3.0;
@@ -138,6 +140,32 @@ function buildAppMenu(): Menu {
       },
     });
   }
+  helpSubmenu.push({
+    label: "Check for Updates…",
+    click: () => {
+      const target = mainWindow;
+      const plan = resolveUpdatePlan();
+      const detail = plan.enabled
+        ? "Update checks run in the background and will prompt you when an update is ready to install."
+        : `Automatic updates are unavailable in this build: ${
+            plan.reason ? describeSkipReason(plan.reason) : "unknown reason"
+          }.`;
+      const options = {
+        type: "info" as const,
+        title: "Software Updates",
+        message: plan.enabled
+          ? "Automatic updates are enabled"
+          : "Automatic updates are disabled",
+        detail,
+      };
+      if (target && !target.isDestroyed()) {
+        void dialog.showMessageBox(target, options);
+      } else {
+        void dialog.showMessageBox(options);
+      }
+    },
+  });
+  helpSubmenu.push({ type: "separator" });
   helpSubmenu.push({
     label: "About Title IX Policy Tracker",
     click: () => {
@@ -569,6 +597,13 @@ if (gotSingleInstanceLock) {
     }
 
     createMainWindow();
+
+    // WP-15A: background update check, started only for signed packaged builds.
+    // `initAutoUpdates` is a no-op when the packaged update config declares no
+    // publisher name, because electron-updater cannot verify installer
+    // signatures in that case and would report them as valid. See
+    // electron/update-policy.ts.
+    initAutoUpdates(() => mainWindow);
 
     app.on("browser-window-focus", () => {
       Menu.setApplicationMenu(buildAppMenu());

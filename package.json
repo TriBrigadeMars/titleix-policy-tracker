@@ -40,7 +40,8 @@
     "desktop:dist:win": "npm run build && npm run desktop:stage-local && npm run desktop:compile && npm run desktop:copy-assets && electron-builder --win --x64 --publish never",
     "tauri:dev": "npx @tauri-apps/cli dev",
     "tauri:build": "npm run build && npm run desktop:stage-local && npx @tauri-apps/cli build",
-    "desktop:gate": "tsx scripts/measure-shell-gate.ts"
+    "desktop:gate": "tsx scripts/measure-shell-gate.ts",
+    "desktop:verify-pack": "node scripts/verify-desktop-pack.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.0.0",
@@ -54,6 +55,8 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "cmdk": "^1.1.1",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.460.0",
     "next": "^15.3.5",
     "next-auth": "5.0.0-beta.25",
@@ -65,9 +68,11 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/semver": "^7.8.0",
     "autoprefixer": "^10.6.1",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
