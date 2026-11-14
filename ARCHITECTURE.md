@@ -283,6 +283,19 @@ checked-in migration must apply.
 
 ## Security
 
+- All Next HTML and API responses receive MIME-sniffing protection, strict
+  cross-origin referrers, frame denial and disabled camera/microphone/location
+  permissions. The CSP in `src/lib/security-headers.ts` restricts scripts,
+  styles, fonts and connections to the same origin; images may also use data
+  URLs and HTTPS. Forms may redirect to Google sign-in. Objects and framing
+  are forbidden. Inline scripts/styles are allowed for Next bootstrap; a
+  nonce-based CSP is follow-up work. Eval is allowed only in development.
+- HSTS is included for hosted responses and omitted for local builds. Because
+  the same compiled build is packaged for desktop, the HSTS rule also excludes
+  `Host: tracker`, the fixed upstream host used by both desktop UDS proxies.
+  The remaining headers apply unchanged to `app://tracker`; fonts are bundled
+  by `next/font` rather than fetched from Google at runtime.
+
 - OAuth via Google (NextAuth.js)
 - `AUTH_SECRET` comes from `resolveAuthSecret` (`src/lib/auth-secret.ts`).
   The committed `DEV_ONLY_AUTH_SECRET` is used only outside production and
