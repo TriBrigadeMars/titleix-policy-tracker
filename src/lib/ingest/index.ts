@@ -69,13 +69,15 @@ export function chunk<T>(items: T[], size = INGEST_CHUNK_SIZE): T[][] {
 function upsertOperation(
   tx: Prisma.TransactionClient,
   row: RawInstrument & { jurisdictionId: string },
-  now: Date
+  now: Date,
+  existingId?: string
 ) {
   const introducedAt = parseSafeDate(row.introducedAt);
   const passedAt = parseSafeDate(row.passedAt);
   const effectiveAt = parseSafeDate(row.effectiveAt);
 
-  const updateData: Record<string, unknown> = {
+  const updateData: Prisma.InstrumentUncheckedUpdateInput = {
+    identifier: row.identifier,
     title: row.title,
     // Source-owned lifecycle status: refreshed on every re-ingest so a bill
     // that moved from PROPOSED to PASSED upstream is not frozen locally.
@@ -93,6 +95,10 @@ function upsertOperation(
   if (introducedAt) updateData.introducedAt = introducedAt;
   if (passedAt) updateData.passedAt = passedAt;
   if (effectiveAt) updateData.effectiveAt = effectiveAt;
+
+  if (existingId) {
+    return tx.instrument.update({ where: { id: existingId }, data: updateData });
+  }
 
   return tx.instrument.upsert({
     where: {
@@ -124,7 +130,8 @@ function upsertOperation(
 
 /**
  * Upsert raw instruments, resolving jurisdiction codes to ids and keying on the
- * unique `(jurisdictionId, type, identifier)`.
+ * source identity `(source, sourceId)` when present, otherwise
+ * `(jurisdictionId, type, identifier)`.
  *
  * Machine-owned fields (title, status, dates when the source reports them,
  * sourceUrl, rawSummary, lastCheckedAt) are updated on re-ingest. Ingestion
@@ -178,8 +185,17 @@ export async function upsertInstruments(
 
     await prisma.$transaction(
       async (tx) => {
+        const pairs = resolved.flatMap((row) => row.source && row.sourceId
+          ? [{ source: row.source, sourceId: row.sourceId }] : []);
+        const existing = pairs.length ? await tx.instrument.findMany({
+          where: { OR: pairs },
+          select: { id: true, source: true, sourceId: true },
+        }) : [];
+        const bySource = new Map(existing.map((row) => [JSON.stringify([row.source, row.sourceId]), row.id]));
         for (const row of resolved) {
-          await upsertOperation(tx, row, now);
+          const key = row.source && row.sourceId ? JSON.stringify([row.source, row.sourceId]) : null;
+          const instrument = await upsertOperation(tx, row, now, key ? bySource.get(key) : undefined);
+          if (key) bySource.set(key, instrument.id);
         }
       },
       { timeout: 30_000 }

@@ -52,6 +52,9 @@ beforeEach(() => {
 });
 
 describe("classifyIngestError", () => {
+  it("classifies unmappable sessions before the generic session-id error", () => {
+    expect(classifyIngestError(new Error("UnmappableResponse: LegiScan session id is missing"))).toBe("UnmappableResponse");
+  });
   it("maps missing keys, timeouts, and upstream failures", () => {
     expect(
       classifyIngestError(new Error("CONGRESS_GOV_API_KEY is not set"))

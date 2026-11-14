@@ -177,6 +177,14 @@ touch editor-owned fields (`triageStatus`, `relevanceConfidence`).
     `jurisdiction` is **required** (400 without it); there is no silent `nc`
     default. Optional `session` and `limit` (default 50, capped 100 — one page
     per request).
+  - LegiScan derives state from `masterlist.session.state_id` using its published
+    state-ID table (not FIPS). Identifiers use `STATE-s<session_id>-<number>`,
+    never the session label. Nonempty unmappable responses fail with
+    `UnmappableResponse` instead of reporting zero-row success. Re-ingestion
+    finds existing `(source, sourceId)` pairs in one query per transaction
+    chunk and updates those rows' identifiers in place, preserving triage,
+    tags and notes; rows without a source identity use the jurisdiction/type/
+    identifier key. Conflicting identity migrations fail the whole chunk.
   - `POST /api/ingest/legiscan` — ADMIN-only, keyed by `LEGISCAN_API_KEY`.
     `id` (session id) takes precedence over `state`. `limit` is opt-in for admin
     testing and caps kept candidates after the whole session is filtered;

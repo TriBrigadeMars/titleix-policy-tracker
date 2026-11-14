@@ -14,6 +14,7 @@ export interface IngestPipelineResult {
 
 export function classifyIngestError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (/UnmappableResponse/.test(message)) return "UnmappableResponse";
   if (/is not set/i.test(message)) return "MissingApiKey";
   if (/session id/i.test(message)) return "MissingSessionId";
   if (/requires an explicit jurisdiction/i.test(message)) {
