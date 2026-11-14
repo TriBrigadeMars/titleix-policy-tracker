@@ -217,6 +217,17 @@ The UI only renders edit affordances when the server says the viewer is an
 `EDITOR` (`canEdit` in `(public)/page.tsx`). That is a display concern, not a
 security boundary; the API guard is what authorizes the write.
 
+## Desktop Runtime
+
+The Rust/Tauri shell manages its local Node server in
+`src-tauri/src/local_server.rs`. Startup waits at most 30 seconds for a `READY `
+line over a channel; a separate reader thread drains stdout throughout the
+server's lifetime. A timeout or closed stdout before readiness kills and reaps
+the child. On Unix, shutdown sends SIGTERM so Node can close PGlite, waits up
+to three seconds, then falls back to a kill. Other
+platforms kill directly. Every shutdown path waits for the child and removes
+the socket. Automatic restart after a mid-session crash remains a follow-up.
+
 ## Testing
 
 `npm test` runs Vitest over `src/**/*.test.ts`. Coverage is concentrated on the
