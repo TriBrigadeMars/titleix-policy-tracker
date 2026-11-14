@@ -5,7 +5,8 @@ import { PrismaClient } from "@prisma/client";
 import {
   ISSUE_TAGS_CATALOG,
   JURISDICTIONS_CATALOG,
-  seedCatalogAndCorpus,
+  seedCatalog,
+  seedDemoCorpus,
   type DemoCorpus,
 } from "../src/lib/seed-catalog";
 
@@ -18,11 +19,16 @@ function loadDemoCorpus(): DemoCorpus {
 }
 
 async function main() {
-  const corpus = loadDemoCorpus();
-  const result = await seedCatalogAndCorpus(prisma, corpus);
+  await seedCatalog(prisma);
   console.log(
-    `Seeded ${JURISDICTIONS_CATALOG.length} jurisdictions, ${ISSUE_TAGS_CATALOG.length} issue tags, ${result.instruments} reviewed instruments, ${result.cellNotes} cell notes.`
+    `Seeded ${JURISDICTIONS_CATALOG.length} jurisdictions, ${ISSUE_TAGS_CATALOG.length} issue tags.`
   );
+  if (process.env.SEED_DEMO === "1" || process.env.NODE_ENV !== "production") {
+    const result = await seedDemoCorpus(prisma, loadDemoCorpus());
+    console.log(`Demo corpus: ${result.instruments} instruments, ${result.cellNotes} cell notes (existing rows preserved).`);
+  } else {
+    console.log("Demo corpus skipped in production; set SEED_DEMO=1 to install it.");
+  }
 }
 
 main()

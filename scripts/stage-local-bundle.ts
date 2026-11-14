@@ -138,7 +138,7 @@ async function seedFirstRun(prisma, appDir) {
     await prisma.cellNote.upsert({
       where: { jurisdictionId_issueTagId: { jurisdictionId, issueTagId } },
       create: { jurisdictionId, issueTagId, body: note.body },
-      update: { body: note.body },
+      update: {},
     });
   }
 

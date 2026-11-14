@@ -134,6 +134,16 @@ Cell notes are the first mutation.
   `(jurisdictionId, type, identifier)` so ingest can upsert instead of
   inventing dedup branches.
 
+## Seeding
+
+`seedCatalog` installs missing jurisdictions and issue tags with empty upsert
+updates. `seedDemoCorpus` creates missing instruments and their initial tags
+atomically, preserves existing instrument and cell-note data, and creates the
+fixture ingest run only when none exists. `seedCatalogAndCorpus` remains the
+desktop first-run entry point. The CLI always seeds the catalogue; production
+adds demo data only with `SEED_DEMO=1`. Development and fresh desktop databases
+continue to include the demo corpus.
+
 ## Ingest Path
 
 Machine ingest is the second mutation surface. It owns source facts and does not

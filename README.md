@@ -61,6 +61,20 @@ npm run dev
 ```
 </details>
 
+## Database seeding
+
+`npm run db:seed` always installs the 52 jurisdictions and 8 issue tags.
+In production (`NODE_ENV=production`) it installs only that catalogue unless
+`SEED_DEMO=1` is set. Development seeding includes the demo corpus by default.
+Re-running either seed preserves existing instruments, triage, issue tags and
+cell-note text, and records the fixture ingest only once. A fresh desktop
+database still gets the demo corpus on first launch.
+
+```bash
+NODE_ENV=production npm run db:seed              # catalogue only
+NODE_ENV=production SEED_DEMO=1 npm run db:seed  # add demo rows
+```
+
 ## Standalone Linux Desktop & AppImage
 
 See [docs/DESKTOP-LOCAL-AND-RUST.md](./docs/DESKTOP-LOCAL-AND-RUST.md) for full details on Arch (`pacman` / `PKGBUILD`), Ubuntu (`deb`), Fedora (`rpm`), keyring setup (`secret-tool`), and the Rust/Tauri v2 shell.
@@ -88,7 +102,7 @@ npm run tauri:build
 | `npm test` | Run the Vitest unit & local-runtime suite |
 | `npm run db:generate` | Generate Prisma client |
 | `npm run db:migrate` | Run database migrations against `DATABASE_URL` |
-| `npm run db:seed` | Seed jurisdictions, issue tags, and demo corpus |
+| `npm run db:seed` | Seed catalogue; demo corpus outside production or with `SEED_DEMO=1` |
 | `npm run desktop:dist:appimage` | Build standalone Linux AppImage |
 | `npm run desktop:dist:linux` | Build Linux AppImage, `pacman`, `deb`, and `rpm` packages |
 | `npm run tauri:build` | Build standalone Rust/Tauri v2 desktop bundles |
