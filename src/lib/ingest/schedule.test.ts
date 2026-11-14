@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RawInstrument } from "@/lib/ingest";
 import type { CandidateScan } from "@/lib/ingest/candidate-filter";
 
-const { congressFetch, openStatesFetch, legiscanFetch, runIngest, recordSkippedIngest } =
+const { congressFetch, openStatesFetch, legiscanFetch, masterListFetch, sourceConflicts, runIngest, recordSkippedIngest } =
   vi.hoisted(() => ({
     congressFetch: vi.fn(),
     openStatesFetch: vi.fn(),
     legiscanFetch: vi.fn(),
+    masterListFetch: vi.fn(),
+    sourceConflicts: vi.fn(),
     runIngest: vi.fn(),
     recordSkippedIngest: vi.fn(),
   }));
@@ -17,8 +19,14 @@ vi.mock("@/lib/ingest/congress", () => ({
 vi.mock("@/lib/ingest/openstates", () => ({
   openStatesAdapter: { name: "openstates", fetch: openStatesFetch },
 }));
-vi.mock("@/lib/ingest/legiscan", () => ({
+vi.mock("@/lib/ingest/legiscan", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./legiscan")>(),
   legiScanAdapter: { name: "legiscan", fetch: legiscanFetch },
+  fetchLegiScanMasterList: masterListFetch,
+}));
+vi.mock("@/lib/ingest/source-policy", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./source-policy")>(),
+  findSourceConflicts: sourceConflicts,
 }));
 vi.mock("@/lib/ingest/pipeline", () => ({
   runIngest,
@@ -36,6 +44,7 @@ import {
   DEFAULT_OPENSTATES_CAP,
   OPENSTATES_PAGE_DELAY_MS,
   OPENSTATES_PAGE_SIZE,
+  findSourceOverlap,
   fetchCongressUntilCap,
   fetchLegiScanUntilCap,
   fetchOpenStatesUntilCap,
@@ -96,6 +105,8 @@ function config(overrides: Partial<ScheduledIngestConfig> = {}): ScheduledIngest
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sourceConflicts.mockResolvedValue([]);
+  masterListFetch.mockResolvedValue({ masterlist: { session: { session_id: 1541, state_id: 5 } } });
   runIngest.mockImplementation(
     async (_source: string, fetchCandidates: () => Promise<CandidateScan>) => {
       const { kept, scanned } = await fetchCandidates();
@@ -377,7 +388,7 @@ describe("runScheduledIngest", () => {
 
     await runScheduledIngest(config({ legiscanSessionId: "1541", legiscanCap: 25 }), deps());
 
-    expect(legiscanFetch).toHaveBeenCalledWith({ id: "1541" });
+    expect(masterListFetch).toHaveBeenCalledWith({ id: "1541" });
   });
 
   it("uses each source's last successful run as its since-filter", async () => {
@@ -410,4 +421,48 @@ describe("runScheduledIngest", () => {
 
     expect(congress.result).toMatchObject({ total: 3, upserted: 1, dropped: 2 });
   });
+});
+
+
+it("skips overlapping LegiScan before calling its adapter or writing instruments", async () => {
+  congressFetch.mockResolvedValue([]);
+  openStatesFetch.mockResolvedValue([]);
+  const results = await runScheduledIngest(config({ openStatesJurisdictions: ["ca"], legiscanSessionId: "1541" }), deps());
+  expect(legiscanFetch).not.toHaveBeenCalled();
+  expect(runIngest.mock.calls.map(([source]) => source)).not.toContain("legiscan");
+  expect(recordSkippedIngest).toHaveBeenCalledWith("legiscan", "SourceOverlap");
+  expect(results.at(-1)).toMatchObject({ ok: false, errorClass: "SourceOverlap" });
+});
+
+
+it("finds source overlap case-insensitively without duplicates", () => {
+  expect(findSourceOverlap(config({ openStatesJurisdictions: ["ca", "CA"] }), " Ca ")).toEqual(["CA"]);
+  expect(findSourceOverlap(config({ openStatesJurisdictions: ["tx"] }), "CA")).toEqual([]);
+  expect(findSourceOverlap(config(), "CA")).toEqual([]);
+});
+
+it("refuses an OpenStates state already owned by LegiScan before fetching", async () => {
+  congressFetch.mockResolvedValue([]);
+  sourceConflicts.mockImplementation(async (source: string) => source === "openstates" ? ["CA"] : []);
+  const results = await runScheduledIngest(config({ openStatesJurisdictions: ["ca"] }), deps());
+  expect(openStatesFetch).not.toHaveBeenCalled();
+  expect(recordSkippedIngest).toHaveBeenCalledWith("openstates:ca", "SourceOverlap");
+  expect(results[1].errorClass).toBe("SourceOverlap");
+});
+
+it("refuses LegiScan when persisted OpenStates rows own its state", async () => {
+  congressFetch.mockResolvedValue([]);
+  sourceConflicts.mockImplementation(async (source: string) => source === "legiscan" ? ["CA"] : []);
+  await runScheduledIngest(config({ legiscanSessionId: "1541" }), deps());
+  expect(recordSkippedIngest).toHaveBeenCalledWith("legiscan", "SourceOverlap");
+  expect(runIngest.mock.calls.map(([source]) => source)).not.toContain("legiscan");
+});
+
+it("does not start LegiScan writes when session state cannot be established", async () => {
+  congressFetch.mockResolvedValue([]);
+  masterListFetch.mockResolvedValue({ masterlist: { session: { session_id: 1541 } } });
+  const results = await runScheduledIngest(config({ legiscanSessionId: "1541" }), deps());
+  expect(results.at(-1)?.ok).toBe(false);
+  expect(runIngest.mock.calls.map(([source]) => source)).not.toContain("legiscan");
+  expect(legiscanFetch).not.toHaveBeenCalled();
 });

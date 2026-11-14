@@ -7,6 +7,7 @@
  * Requires: prisma generate, schema applied (migrate deploy).
  */
 import { PrismaClient } from "@prisma/client";
+import { findProbableDuplicates } from "../src/lib/ingest/probable-duplicates";
 
 const prisma = new PrismaClient();
 
@@ -120,9 +121,22 @@ async function main() {
     }
   }
 
+  const duplicates = findProbableDuplicates(await prisma.instrument.findMany({
+    where: { type: "BILL", source: { not: null } },
+    select: { id: true, jurisdictionId: true, identifier: true, source: true, jurisdiction: { select: { code: true } } },
+    orderBy: [{ jurisdictionId: "asc" }, { identifier: "asc" }, { id: "asc" }],
+  }));
+  lines.push("", "## Probable cross-source duplicate bills (review only)");
+  lines.push("Same jurisdiction and normalized bill-number suffix; sessions may differ. No rows are modified.");
+  if (!duplicates.length) lines.push("- (none)");
+  for (const [left, right] of duplicates) {
+    lines.push(`- ${left.jurisdiction.code}: ${left.source} ${left.identifier} [${left.id}] ↔ ${right.source} ${right.identifier} [${right.id}]`);
+  }
+
   // Machine-readable block for diffing
   const json = {
     generatedAt: stamp,
+    probableCrossSourceDuplicates: duplicates,
     jurisdictions: jurisdictionCount,
     issueTagsCatalog: issueTagCatalogCount,
     instrumentsTotal: instrumentTotal,
