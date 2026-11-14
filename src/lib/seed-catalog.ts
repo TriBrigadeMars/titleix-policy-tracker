@@ -147,10 +147,7 @@ export interface DemoCorpus {
   cellNotes: FixtureCellNote[];
 }
 
-export async function seedCatalogAndCorpus(
-  prisma: PrismaClient,
-  corpus: DemoCorpus
-): Promise<{ instruments: number; cellNotes: number }> {
+export async function seedCatalog(prisma: PrismaClient): Promise<void> {
   for (const j of JURISDICTIONS_CATALOG) {
     await prisma.jurisdiction.upsert({
       where: { code: j.code },
@@ -166,7 +163,12 @@ export async function seedCatalogAndCorpus(
       create: tag,
     });
   }
+}
 
+export async function seedDemoCorpus(
+  prisma: PrismaClient,
+  corpus: DemoCorpus
+): Promise<{ instruments: number; cellNotes: number }> {
   const checkedAt = new Date(corpus.checkedAt);
 
   const jurisdictions = await prisma.jurisdiction.findMany({
@@ -185,7 +187,13 @@ export async function seedCatalogAndCorpus(
       throw new Error(`Fixture jurisdiction missing: ${row.jurisdictionCode}`);
     }
 
-    const instrument = await prisma.instrument.upsert({
+    const tagIds = row.issueTagSlugs.map((slug) => {
+      const id = slugToId.get(slug);
+      if (!id) throw new Error(`Fixture issue tag missing: ${slug}`);
+      return id;
+    });
+
+    await prisma.instrument.upsert({
       where: {
         jurisdictionId_type_identifier: {
           jurisdictionId,
@@ -206,36 +214,10 @@ export async function seedCatalogAndCorpus(
         sourceUrl: row.sourceUrl,
         rawSummary: row.rawSummary,
         lastCheckedAt: checkedAt,
+        issueTags: { create: tagIds.map((issueTagId) => ({ issueTagId })) },
       },
-      update: {
-        title: row.title,
-        status: row.status,
-        triageStatus: row.triageStatus,
-        relevanceConfidence: row.relevanceConfidence,
-        source: row.source,
-        sourceId: row.sourceId,
-        sourceUrl: row.sourceUrl,
-        rawSummary: row.rawSummary,
-        lastCheckedAt: checkedAt,
-      },
+      update: {},
     });
-
-    await prisma.instrumentIssueTag.deleteMany({
-      where: { instrumentId: instrument.id },
-    });
-    const tagIds = row.issueTagSlugs.map((slug) => {
-      const id = slugToId.get(slug);
-      if (!id) throw new Error(`Fixture issue tag missing: ${slug}`);
-      return id;
-    });
-    if (tagIds.length > 0) {
-      await prisma.instrumentIssueTag.createMany({
-        data: tagIds.map((issueTagId) => ({
-          instrumentId: instrument.id,
-          issueTagId,
-        })),
-      });
-    }
   }
 
   for (const note of corpus.cellNotes) {
@@ -255,24 +237,35 @@ export async function seedCatalogAndCorpus(
         issueTagId,
         body: note.body,
       },
-      update: { body: note.body },
+      update: {},
     });
   }
 
-  await prisma.ingestRun.create({
-    data: {
-      source: "fixture",
-      status: "SUCCESS",
-      startedAt: checkedAt,
-      finishedAt: checkedAt,
-      upserted: corpus.instruments.length,
-      skipped: 0,
-      dropped: 0,
-    },
-  });
+  if (!(await prisma.ingestRun.findFirst({ where: { source: "fixture" } }))) {
+    await prisma.ingestRun.create({
+      data: {
+        source: "fixture",
+        status: "SUCCESS",
+        startedAt: checkedAt,
+        finishedAt: checkedAt,
+        upserted: corpus.instruments.length,
+        skipped: 0,
+        dropped: 0,
+      },
+    });
+  }
 
   return {
     instruments: corpus.instruments.length,
     cellNotes: corpus.cellNotes.length,
   };
+}
+
+/** Compatibility entry point for desktop first-run initialization. */
+export async function seedCatalogAndCorpus(
+  prisma: PrismaClient,
+  corpus: DemoCorpus
+): Promise<{ instruments: number; cellNotes: number }> {
+  await seedCatalog(prisma);
+  return seedDemoCorpus(prisma, corpus);
 }
