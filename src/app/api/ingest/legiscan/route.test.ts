@@ -1,16 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { auth, fetch, runIngest } = vi.hoisted(() => ({
+const { auth, fetch, runIngest, sourceConflicts } = vi.hoisted(() => ({
   auth: vi.fn(),
+  sourceConflicts: vi.fn(),
   fetch: vi.fn(),
   runIngest: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth }));
 vi.mock("@/lib/ingest/legiscan", () => ({
-  legiScanAdapter: { name: "legiscan", fetch },
+  legiScanAdapter: { name: "legiscan", fetch: vi.fn() },
+  fetchLegiScanMasterList: fetch,
+  getLegiScanSession: () => ({ state: "CA", id: 1541 }),
+  mapLegiScanMasterList: (rows: unknown) => rows,
 }));
 vi.mock("@/lib/ingest/pipeline", () => ({ runIngest }));
+
+vi.mock("@/lib/ingest/source-policy", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/ingest/source-policy")>(),
+  findSourceConflicts: sourceConflicts,
+}));
 
 import { POST } from "./route";
 
@@ -41,6 +50,7 @@ const base = "http://localhost/api/ingest/legiscan";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sourceConflicts.mockResolvedValue([]);
   fetch.mockResolvedValue([]);
   runIngest.mockImplementation(async (_source: string, fetchCandidates: () => Promise<{ kept: unknown[]; scanned: number }>) => {
     const { kept, scanned } = await fetchCandidates();
@@ -163,4 +173,22 @@ describe("POST /api/ingest/legiscan — ADMIN", () => {
       error: "Ingest failed. Check server logs for details.",
     });
   });
+});
+
+it("refuses the other source with 409 before writes, and accepts an explicit admin force", async () => {
+  signIn(ADMIN);
+  sourceConflicts.mockResolvedValue(["CA"]);
+  const response = await POST(post(`${base}?id=1541`));
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ states: ["CA"], error: expect.stringContaining("force=1") });
+  expect(runIngest).not.toHaveBeenCalled();
+  sourceConflicts.mockClear();
+  expect((await POST(post(`${base}?id=1541&force=1`))).status).toBe(200);
+  expect(sourceConflicts).not.toHaveBeenCalled();
+});
+
+it("does not allow a non-admin to force source overlap", async () => {
+  signIn(EDITOR);
+  expect((await POST(post(`${base}?id=1541&force=1`))).status).toBe(403);
+  expect(fetch).not.toHaveBeenCalled();
 });

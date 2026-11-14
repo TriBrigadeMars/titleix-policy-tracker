@@ -5,7 +5,8 @@ import {
   type CandidateScan,
 } from "@/lib/ingest/candidate-filter";
 import { congressAdapter } from "@/lib/ingest/congress";
-import { legiScanAdapter } from "@/lib/ingest/legiscan";
+import { legiScanAdapter, fetchLegiScanMasterList, getLegiScanSession, mapLegiScanMasterList } from "@/lib/ingest/legiscan";
+import { findSourceConflicts, sourceStateCode, SourceOverlapError } from "@/lib/ingest/source-policy";
 import { openStatesAdapter } from "@/lib/ingest/openstates";
 import {
   classifyIngestError,
@@ -96,6 +97,12 @@ export function scheduledIngestConfigFromEnv(): ScheduledIngestConfig {
     legiscanCap: envInt("INGEST_LEGISCAN_LIMIT", DEFAULT_LEGISCAN_CAP),
     maxPagesPerSource: envInt("INGEST_MAX_PAGES", DEFAULT_MAX_PAGES_PER_SOURCE),
   };
+}
+
+/** State codes configured for both providers (session state comes from LegiScan). */
+export function findSourceOverlap(config: Pick<ScheduledIngestConfig, "openStatesJurisdictions">, legiscanState: string): string[] {
+  const state = sourceStateCode(legiscanState);
+  return state && config.openStatesJurisdictions.some((code) => sourceStateCode(code) === state) ? [state] : [];
 }
 
 /** `2026-11-12T08:30:00Z` — the Congress.gov `fromDateTime` format. */
@@ -208,10 +215,11 @@ export async function fetchOpenStatesUntilCap(
  */
 export async function fetchLegiScanUntilCap(
   sessionId: string,
-  cap: number
+  cap: number,
+  fetchedBody?: unknown
 ): Promise<CandidateScan> {
   const { kept, scanned } = filterCandidates(
-    await legiScanAdapter.fetch({ id: sessionId })
+    fetchedBody === undefined ? await legiScanAdapter.fetch({ id: sessionId }) : mapLegiScanMasterList(fetchedBody)
   );
   return { kept: kept.slice(0, cap), scanned };
 }
@@ -246,14 +254,30 @@ export async function runScheduledIngest(
 
   for (const jurisdiction of config.openStatesJurisdictions) {
     const source = `openstates:${jurisdiction}`;
+    try {
+      const conflicts = await findSourceConflicts("openstates", [jurisdiction]);
+      if (conflicts.length) {
+        console.warn(`[ingest:${source}] SourceOverlap: ${conflicts.join(", ")}`);
+        await recordSkippedIngest(source, "SourceOverlap");
+        results.push({ source, ok: false, errorClass: "SourceOverlap" });
+        continue;
+      }
+    } catch (error) {
+      await recordSkippedIngest(source, classifyIngestError(error));
+      results.push({ source, ok: false, errorClass: classifyIngestError(error) });
+      continue;
+    }
     results.push(
-      await runOne(source, async () =>
-        fetchOpenStatesUntilCap(jurisdiction, config.openStatesCap, {
+      await runOne(source, async () => {
+        const scan = await fetchOpenStatesUntilCap(jurisdiction, config.openStatesCap, {
           maxPages,
           since: await deps.lastSuccessfulRunAt(source),
           sleep: deps.sleep,
-        })
-      )
+        });
+        const conflicts = await findSourceConflicts("openstates", scan.kept.map((row) => row.jurisdictionCode));
+        if (conflicts.length) throw new SourceOverlapError(conflicts);
+        return scan;
+      })
     );
   }
 
@@ -266,11 +290,30 @@ export async function runScheduledIngest(
     });
   } else {
     const sessionId = config.legiscanSessionId;
-    results.push(
-      await runOne("legiscan", () =>
-        fetchLegiScanUntilCap(sessionId, config.legiscanCap)
-      )
-    );
+    try {
+      // A single master-list request supplies metadata and rows. Check source
+      // ownership before mapping, filtering or starting the write pipeline.
+      const body = await fetchLegiScanMasterList({ id: sessionId });
+      const state = getLegiScanSession(body).state;
+      if (!state) throw new Error("UnmappableResponse: LegiScan session state is unknown");
+      const conflicts = [...new Set([
+        ...findSourceOverlap(config, state),
+        ...await findSourceConflicts("legiscan", [state]),
+      ])];
+      if (conflicts.length) {
+        console.warn(`[ingest:legiscan] SourceOverlap: ${conflicts.join(", ")}`);
+        await recordSkippedIngest("legiscan", "SourceOverlap");
+        results.push({ source: "legiscan", ok: false, errorClass: "SourceOverlap" });
+      } else {
+        results.push(await runOne("legiscan", () =>
+          fetchLegiScanUntilCap(sessionId, config.legiscanCap, body)
+        ));
+      }
+    } catch (error) {
+      const errorClass = classifyIngestError(error);
+      await recordSkippedIngest("legiscan", errorClass);
+      results.push({ source: "legiscan", ok: false, errorClass });
+    }
   }
 
   return results;

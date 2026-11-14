@@ -191,6 +191,18 @@ touch editor-owned fields (`triageStatus`, `relevanceConfidence`).
     omitted, every candidate in the session is kept.
   - All three adapters **fail closed** when their API key is missing rather than
     issuing an unkeyed request.
+- **State source ownership:** one source per jurisdiction. The owner approved
+  this rule on 2026-11-12. CO, KS, NM, OK, UT and WY are LegiScan-only; keep
+  them out of `INGEST_OPENSTATES_JURISDICTIONS`. The scheduler skips OpenStates
+  when a state is reserved or already has LegiScan bills. It uses the single
+  LegiScan master-list response's session state to check configured overlap
+  and existing OpenStates bills before starting the write pipeline. Configured
+  OpenStates overlap takes precedence and records a `SourceOverlap` skipped
+  run, even when OpenStates itself cannot fetch. No rows are merged or deleted.
+  Both ADMIN routes return 409 on source conflict; only explicit `force=1`
+  bypasses the policy. `db:census` prints probable cross-source duplicates
+  (same jurisdiction and normalized final bill-number segment) for review;
+  those candidates can include different sessions and are never auto-merged.
 - **Scheduled ingest** (`src/lib/ingest/schedule.ts`, `npm run ingest:scheduled`,
   `.github/workflows/ingest.yml`): caps count **kept** Title IX candidates, not
   raw rows, so the keyword filter always sees every row that was fetched.

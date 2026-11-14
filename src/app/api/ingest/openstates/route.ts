@@ -5,6 +5,8 @@ import { filterCandidates } from "@/lib/ingest/candidate-filter";
 import { runIngest } from "@/lib/ingest/pipeline";
 import { INGEST_GENERIC_ERROR, paramInt } from "@/lib/ingest/route-helpers";
 
+import { findSourceConflicts, SourceOverlapError } from "@/lib/ingest/source-policy";
+
 const MAX_INGEST_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 
@@ -13,6 +15,7 @@ const DEFAULT_LIMIT = 50;
  *
  * Query params:
  *   jurisdiction – required state jurisdiction slug (e.g. "nc")
+ *   force        – explicit admin override (`1`) of the source ownership guard
  *   session      – optional session identifier
  *   limit        – max bills to ingest (default 50, capped at 100). OpenStates
  *                  returns one page per request; higher `limit` values still
@@ -39,18 +42,30 @@ export async function POST(request: Request) {
   );
 
   try {
+    if (params.get("force") !== "1") {
+      const conflicts = await findSourceConflicts("openstates", [jurisdiction]);
+      if (conflicts.length) throw new SourceOverlapError(conflicts);
+    }
     const options: Record<string, string | number> = { jurisdiction, limit };
     if (session) options.session = session;
 
-    const result = await runIngest(openStatesAdapter.name, async () =>
-      filterCandidates(await openStatesAdapter.fetch(options))
-    );
+    const result = await runIngest(openStatesAdapter.name, async () => {
+      const rows = await openStatesAdapter.fetch(options);
+      if (params.get("force") !== "1") {
+        const conflicts = await findSourceConflicts("openstates", rows.map((row) => row.jurisdictionCode));
+        if (conflicts.length) throw new SourceOverlapError(conflicts);
+      }
+      return filterCandidates(rows);
+    });
     return NextResponse.json({
       source: openStatesAdapter.name,
       ...result,
       limit,
     });
   } catch (error) {
+    if (error instanceof SourceOverlapError) {
+      return NextResponse.json({ error: error.message, states: error.states }, { status: 409 });
+    }
     console.error("[ingest/openstates] failed", error);
     return NextResponse.json(
       { error: INGEST_GENERIC_ERROR },
