@@ -17,6 +17,36 @@ All sources share this contract (implemented once in `crates/worker`):
    (b) local keyword scoring against title/summary decides insert-vs-skip.
    Matched keywords are recorded in `raw_json._match` for the reviewer.
 
+## Current state-source ownership (Next.js implementation)
+
+The owner approved one state source per jurisdiction on 2026-11-12. CO, KS,
+NM, OK, UT and WY use LegiScan only and must not be listed in
+`INGEST_OPENSTATES_JURISDICTIONS`. Other states may use either source, but
+switching sources requires reviewing existing data first.
+
+The scheduled job refuses a provider when the other provider already has
+bills for its state. If the LegiScan session overlaps the configured
+OpenStates list, OpenStates wins and LegiScan records `SourceOverlap` without
+writing instruments. The state comes from the fetched session metadata; that
+same response supplies the bill data, so there is no second API request.
+OpenStates cannot ingest the six reserved states by default.
+
+`POST /api/ingest/legiscan` and `POST /api/ingest/openstates` require ADMIN and
+return 409 with conflicting state codes. An intentional ADMIN request may
+use `?force=1` (`&force=1` alongside existing parameters). The scheduled job
+has no force option. These guards prevent sequential/default ingest from
+mixing sources; simultaneous forced/admin imports are not database-enforced
+cross-source matching.
+
+Run `npm run db:census` to list probable existing duplicates. It compares the
+normalized final bill-number segment within each jurisdiction, across
+different non-null sources. Sessions may differ, so each pair needs human
+review. The census never modifies, merges or deletes data. Keep triage, tags
+and notes intact when deciding what to do with each pair.
+
+The remaining source inventory below is an older design reference; the
+current implementation is described in `ARCHITECTURE.md`.
+
 ### Shared keyword list (stage b)
 Primary (any match → candidate):
 - `title ix`, `title 9`, `20 u.s.c. 1681`, `34 c.f.r. part 106`

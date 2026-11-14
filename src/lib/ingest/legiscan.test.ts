@@ -19,7 +19,7 @@ const completeItem = {
 };
 
 function response(masterlist: Record<string, unknown>) {
-  return { status: "OK", masterlist };
+  return { status: "OK", masterlist: { session: { session_id: 1541 }, ...masterlist } };
 }
 
 function masterlist(...items: unknown[]) {
@@ -36,7 +36,7 @@ describe("mapLegiScanMasterList", () => {
       ...masterlist(completeItem),
       session: {
         session_id: 1541,
-        session_tag: "20232024",
+        session_tag: "Regular Session",
         session_name: "2023-2024 Regular Session",
       },
     });
@@ -44,7 +44,7 @@ describe("mapLegiScanMasterList", () => {
       {
         jurisdictionCode: "CA",
         type: "BILL",
-        identifier: "CA-20232024-AB1",
+        identifier: "CA-s1541-AB1",
         source: "legiscan",
         sourceId: "12345",
         title: "An act relating to student safety",
@@ -103,15 +103,15 @@ describe("mapLegiScanMasterList", () => {
     expect(row.jurisdictionCode).toBe("TX");
   });
 
-  it("skips items without a derivable state code", () => {
+  it("rejects nonempty items without a derivable state code", () => {
     const noState = { ...completeItem, state: undefined };
-    expect(mapLegiScanMasterList(response(masterlist(noState)))).toEqual([]);
+    expect(() => mapLegiScanMasterList(response(masterlist(noState)))).toThrow(/UnmappableResponse/);
   });
 
   it("ignores the special session key and non-numeric keys", () => {
     const json = response({
       ...masterlist(completeItem),
-      session: { session_id: 1541, session_tag: "20232024" },
+      session: { session_id: 1541, session_tag: "Regular Session" },
       bogus: { not: "a bill" },
     });
     expect(mapLegiScanMasterList(json)).toHaveLength(1);
@@ -128,7 +128,7 @@ describe("mapLegiScanMasterList", () => {
       response(masterlist(completeItem, { number: "AB2", status: "1" }))
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].identifier).toBe("CA-AB1");
+    expect(rows[0].identifier).toBe("CA-s1541-AB1");
   });
 
     it("skips items with no bill_id instead of producing an 'undefined' sourceId", () => {
@@ -178,15 +178,15 @@ describe("mapLegiScanMasterList", () => {
         )
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0].identifier).toBe("CA-AB1");
+      expect(rows[0].identifier).toBe("CA-s1541-AB1");
     });
 
-  it("uses the session name when no session tag exists", () => {
+  it("uses the numeric session id when no session tag exists", () => {
     const json = response({
       ...masterlist(completeItem),
       session: { session_id: 1541, session_name: "2023 Regular" },
     });
-    expect(mapLegiScanMasterList(json)[0].identifier).toBe("CA-2023 Regular-AB1");
+    expect(mapLegiScanMasterList(json)[0].identifier).toBe("CA-s1541-AB1");
   });
 });
 
@@ -287,4 +287,46 @@ describe("legiScanAdapter.fetch", () => {
       "Invalid API key"
     );
   });
+});
+// Captured in hardening 05 Part A; no synthetic state fields are added.
+describe("captured LegiScan identity", () => {
+  it("maps session state_id and a session-unique identifier", async () => {
+    const { default: captured } = await import("./__fixtures__/legiscan-masterlist.json");
+    expect(mapLegiScanMasterList(captured).map((row) => [row.jurisdictionCode, row.identifier])).toEqual([
+      ["WY", "WY-s2213-HB0001"], ["WY", "WY-s2213-HB0002"], ["WY", "WY-s2213-HB0003"],
+    ]);
+  });
+
+  it("distinguishes two sessions with the same bill number and free-text label", async () => {
+    const { default: captured } = await import("./__fixtures__/legiscan-masterlist.json");
+    const next = structuredClone(captured);
+    next.masterlist.session.session_id += 1;
+    const first = mapLegiScanMasterList(captured)[0];
+    const second = mapLegiScanMasterList(next)[0];
+    expect(first?.identifier).toBe("WY-s2213-HB0001");
+    expect(second?.identifier).toBe("WY-s2214-HB0001");
+  });
+
+  it("fails loudly when nonempty rows cannot be mapped", () => {
+    expect(() => mapLegiScanMasterList({ masterlist: { 0: { number: "AB1" } } })).toThrow(/UnmappableResponse/);
+  });
+});
+
+
+it("maps all 50 states and DC using the published IDs", async () => {
+  const { LEGISCAN_STATE_IDS } = await import("./state");
+  const { JURISDICTIONS_CATALOG } = await import("../seed-catalog");
+  expect(Object.keys(LEGISCAN_STATE_IDS)).toHaveLength(51);
+  expect(new Set(Object.values(LEGISCAN_STATE_IDS)).size).toBe(51);
+  expect(LEGISCAN_STATE_IDS[50]).toBe("WY");
+  expect(LEGISCAN_STATE_IDS[51]).toBe("DC");
+  expect(Object.values(LEGISCAN_STATE_IDS).sort()).toEqual(JURISDICTIONS_CATALOG.filter((j) => j.level === "STATE").map((j) => j.code).sort());
+});
+
+it("rejects an unknown state and rejects a requested state that disagrees with the session", async () => {
+  const { default: captured } = await import("./__fixtures__/legiscan-masterlist.json");
+  expect(() => mapLegiScanMasterList(captured, { state: "CA" })).toThrow(/UnmappableResponse/);
+  const unknown = structuredClone(captured);
+  unknown.masterlist.session.state_id = 9999;
+  expect(() => mapLegiScanMasterList(unknown)).toThrow(/UnmappableResponse/);
 });

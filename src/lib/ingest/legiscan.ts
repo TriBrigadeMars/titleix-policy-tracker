@@ -6,6 +6,7 @@ import {
   type RawInstrument,
 } from "@/lib/ingest";
 import {
+  LEGISCAN_STATE_IDS,
   legiscanIsIntroduced,
   legiscanIsPassed,
   legiscanStatusToInstrumentStatus,
@@ -47,12 +48,6 @@ const LegiScanMasterListItemSchema = z.object({
 /** Derived from the schema so the two can never drift apart. */
 type LegiScanMasterListItem = z.infer<typeof LegiScanMasterListItemSchema>;
 
-interface LegiScanSession {
-  session_id: number;
-  session_name?: string;
-  session_tag?: string;
-}
-
 const LEGISCAN_API_URL = "https://api.legiscan.com/";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -68,18 +63,27 @@ function parseMasterListItem(value: unknown): LegiScanMasterListItem | null {
   return parsed.success ? parsed.data : null;
 }
 
-function legiScanState(item: LegiScanMasterListItem): string | null {
-  if (typeof item.state === "string") {
-    const trimmed = item.state.trim().toUpperCase();
-    if (/^[A-Z]{2}$/.test(trimmed)) return trimmed;
-  }
-  return null;
+function stateCode(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const code = value.trim().toUpperCase();
+  return Object.values(LEGISCAN_STATE_IDS).includes(code) ? code : null;
+}
+
+/** Session metadata is authoritative; URLs are display links, not identity. */
+export function getLegiScanSession(json: unknown): { state: string | null; id: number | null } {
+  const session = isRecord(json) && isRecord(json.masterlist) && isRecord(json.masterlist.session)
+    ? json.masterlist.session : null;
+  return {
+    state: typeof session?.state_id === "number" ? LEGISCAN_STATE_IDS[session.state_id] ?? null : null,
+    id: typeof session?.session_id === "number" && Number.isSafeInteger(session.session_id) && session.session_id > 0
+      ? session.session_id : null,
+  };
 }
 
 function toRawInstrument(
   value: LegiScanMasterListItem,
   state: string,
-  sessionTag: string | null
+  sessionId: number
 ): RawInstrument {
   const statusValue = value.status;
   const statusDate = value.status_date ?? null;
@@ -91,7 +95,7 @@ function toRawInstrument(
     type: "BILL",
     // Prefix with state + session so identifiers stay unique across states
     // and sessions that reuse the same bill number.
-    identifier: `${state}${sessionTag ? `-${sessionTag}` : ""}-${value.number}`,
+    identifier: `${state}-s${sessionId}-${value.number}`,
     source: "legiscan",
     sourceId: String(value.bill_id),
     title: value.title ?? "",
@@ -125,28 +129,25 @@ export function* mapLegiScanMasterListBatches(
   const masterlist = json.masterlist;
   if (!isRecord(masterlist)) return;
 
-  const fallbackState = opts?.state;
+  const session = getLegiScanSession(json);
+  const fallbackState = stateCode(opts?.state);
+  if (session.state && fallbackState && session.state !== fallbackState) {
+    throw new Error("UnmappableResponse: LegiScan session does not match requested state");
+  }
+  const entries = Object.entries(masterlist).filter(([key]) => key !== "session");
+  if (!entries.length) return;
+  if (!session.id) throw new Error("UnmappableResponse: LegiScan session id is missing");
   const limit = opts?.limit;
-  const session = isRecord(masterlist.session)
-    ? (masterlist.session as unknown as LegiScanSession)
-    : null;
-  const sessionTag =
-    typeof session?.session_tag === "string"
-      ? session.session_tag
-      : typeof session?.session_name === "string"
-        ? session.session_name
-        : null;
 
   let batch: RawInstrument[] = [];
   let mapped = 0;
-  for (const [key, value] of Object.entries(masterlist)) {
-    if (key === "session") continue;
+  for (const [, value] of entries) {
     const item = parseMasterListItem(value);
     if (!item) continue;
-    const state = legiScanState(item) ?? fallbackState;
+    const state = session.state ?? stateCode(item.state) ?? fallbackState;
     if (!state) continue;
 
-    batch.push(toRawInstrument(item, state, sessionTag));
+    batch.push(toRawInstrument(item, state, session.id));
     mapped += 1;
     if (batch.length >= INGEST_CHUNK_SIZE) {
       yield batch;
@@ -154,6 +155,7 @@ export function* mapLegiScanMasterListBatches(
     }
     if (limit !== undefined && limit > 0 && mapped >= limit) break;
   }
+  if (mapped === 0) throw new Error("UnmappableResponse: no LegiScan bills could be mapped");
   if (batch.length > 0) yield batch;
 }
 
@@ -165,8 +167,8 @@ export function* mapLegiScanMasterListBatches(
  * `"session"` key describing the session itself. Numeric entries are validated
  * against {@link LegiScanMasterListItemSchema} and mapped; anything without a
  * positive integer `bill_id` is skipped. When `state` is omitted from `opts`,
- * bills without a two-letter `state` field are skipped because their
- * jurisdiction code cannot be derived.
+ * the session state_id is used, with explicit state or bill state as a fallback.
+ * Nonempty unmappable responses throw instead of recording a false success.
  */
 export function mapLegiScanMasterList(
   json: unknown,
@@ -181,50 +183,54 @@ export function mapLegiScanMasterList(
 
 /**
  * The `getMasterList` call accepts `id=<session_id>`; the state is resolved
- * from each bill's `state` field (or passed through when the API omits it).
+ * from the session's numeric `state_id`, using the published LegiScan table.
  *
  * By default the whole session is ingested: `getMasterList` is a full session
  * dump and silently truncating it would drop bills. `opts.limit` is an explicit
  * opt-in cap for admin testing, and is applied while mapping so the adapter
  * never materializes the full mapped array.
  */
+export async function fetchLegiScanMasterList(opts?: Parameters<IngestAdapter["fetch"]>[0]): Promise<unknown> {
+  const params = new URLSearchParams({ op: "getMasterList" });
+  const apiKey = process.env.LEGISCAN_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "LEGISCAN_API_KEY is not set; see .env.example for instructions"
+    );
+  }
+  params.set("key", apiKey);
+
+  if (opts?.id !== undefined && opts.id !== "") {
+    params.set("id", String(opts.id));
+  } else if (opts?.state !== undefined && opts.state !== "") {
+    params.set("state", String(opts.state));
+  } else {
+    throw new Error("LegiScan ingest requires a session id or state");
+  }
+
+  const url = `${LEGISCAN_API_URL}?${params.toString()}`;
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(`LegiScan request failed with status ${res.status}`);
+  }
+
+  const body = await res.json();
+  if (isRecord(body) && body.status === "ERROR") {
+    const message = isRecord(body.alert) && typeof body.alert.message === "string"
+      ? body.alert.message
+      : "LegiScan returned an error";
+    throw new Error(message);
+  }
+  return body;
+}
+
 export const legiScanAdapter: IngestAdapter = {
   name: "legiscan",
   async fetch(opts) {
-    const params = new URLSearchParams({ op: "getMasterList" });
-    const apiKey = process.env.LEGISCAN_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        "LEGISCAN_API_KEY is not set; see .env.example for instructions"
-      );
-    }
-    params.set("key", apiKey);
-
-    if (opts?.id !== undefined && opts.id !== "") {
-      params.set("id", String(opts.id));
-    } else if (opts?.state !== undefined && opts.state !== "") {
-      params.set("state", String(opts.state));
-    } else {
-      throw new Error("LegiScan ingest requires a session id or state");
-    }
-
-    const url = `${LEGISCAN_API_URL}?${params.toString()}`;
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      throw new Error(`LegiScan request failed with status ${res.status}`);
-    }
-
-    const body = await res.json();
-    if (isRecord(body) && body.status === "ERROR") {
-      const message = isRecord(body.alert) && typeof body.alert.message === "string"
-        ? body.alert.message
-        : "LegiScan returned an error";
-      throw new Error(message);
-    }
-    const state =
-      typeof opts?.state === "string" ? opts.state.toUpperCase() : undefined;
+    const body = await fetchLegiScanMasterList(opts);
+    const state = typeof opts?.state === "string" ? opts.state : undefined;
     const limit = Number(opts?.limit);
     return mapLegiScanMasterList(body, {
       state,

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { auth, fetch, runIngest } = vi.hoisted(() => ({
+const { auth, fetch, runIngest, sourceConflicts } = vi.hoisted(() => ({
   auth: vi.fn(),
+  sourceConflicts: vi.fn(),
   fetch: vi.fn(),
   runIngest: vi.fn(),
 }));
@@ -11,6 +12,11 @@ vi.mock("@/lib/ingest/openstates", () => ({
   openStatesAdapter: { name: "openstates", fetch },
 }));
 vi.mock("@/lib/ingest/pipeline", () => ({ runIngest }));
+
+vi.mock("@/lib/ingest/source-policy", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/ingest/source-policy")>(),
+  findSourceConflicts: sourceConflicts,
+}));
 
 import { POST } from "./route";
 
@@ -48,6 +54,7 @@ const base = "http://localhost/api/ingest/openstates";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sourceConflicts.mockResolvedValue([]);
   fetch.mockResolvedValue([]);
   runIngest.mockImplementation(async (_source: string, fetchCandidates: () => Promise<{ kept: unknown[]; scanned: number }>) => {
     const { kept, scanned } = await fetchCandidates();
@@ -146,4 +153,22 @@ describe("POST /api/ingest/openstates — ADMIN", () => {
       error: "Ingest failed. Check server logs for details.",
     });
   });
+});
+
+it("refuses the other source with 409 before writes, and accepts an explicit admin force", async () => {
+  signIn(ADMIN);
+  sourceConflicts.mockResolvedValue(["CA"]);
+  const response = await POST(post(`${base}?jurisdiction=ca`));
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ states: ["CA"], error: expect.stringContaining("force=1") });
+  expect(runIngest).not.toHaveBeenCalled();
+  sourceConflicts.mockClear();
+  expect((await POST(post(`${base}?jurisdiction=ca&force=1`))).status).toBe(200);
+  expect(sourceConflicts).not.toHaveBeenCalled();
+});
+
+it("does not allow a non-admin to force source overlap", async () => {
+  signIn(EDITOR);
+  expect((await POST(post(`${base}?jurisdiction=ca&force=1`))).status).toBe(403);
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -100,6 +100,31 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     await prisma.$disconnect();
   });
 
+  it("updates a changed identifier by source identity while preserving editor work", async () => {
+    const oldIdentifier = id("old-label-AB1");
+    const newIdentifier = id("s2213-AB1");
+    const original = await prisma.instrument.create({ data: {
+      jurisdictionId: stateId, type: "BILL", identifier: oldIdentifier,
+      title: "Original", status: "PROPOSED", source: "legiscan", sourceId: id("source"),
+      triageStatus: "NOT_RELEVANT", relevanceConfidence: 37,
+      notes: { create: { body: "Editor verification" } },
+    } });
+    const tag = await prisma.issueTag.create({ data: { slug: id("tag"), label: "Test tag", sortOrder: 99 } });
+    try {
+      await prisma.instrumentIssueTag.create({ data: { instrumentId: original.id, issueTagId: tag.id } });
+      const before = await prisma.instrument.count({ where: { jurisdictionId: stateId } });
+      await upsertInstruments([rawRow({ jurisdictionCode: stateCode, identifier: newIdentifier,
+        source: "legiscan", sourceId: id("source"), title: "Revised source title", status: "PASSED" })]);
+      const updated = await prisma.instrument.findUniqueOrThrow({ where: { id: original.id }, include: { issueTags: true, notes: true } });
+      expect(updated).toMatchObject({ identifier: newIdentifier, title: "Revised source title", status: "PASSED", triageStatus: "NOT_RELEVANT", relevanceConfidence: 37 });
+      expect(updated.issueTags.map((t) => t.issueTagId)).toEqual([tag.id]);
+      expect(updated.notes.map((n) => n.body)).toEqual(["Editor verification"]);
+      expect(await prisma.instrument.count({ where: { jurisdictionId: stateId } })).toBe(before);
+    } finally {
+      await prisma.issueTag.delete({ where: { id: tag.id } });
+    }
+  });
+
   it("creates an instrument on first sight with machine fields and untriaged defaults", async () => {
     const identifier = id("create");
     const result = await upsertInstruments([
@@ -354,7 +379,7 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     ).toBe(0);
   });
 
-  it("rolls back all rows in a failing chunk on (source, sourceId) violation while keeping earlier chunks committed", async () => {
+  it("rolls back a failing identifier migration chunk while keeping earlier chunks committed", async () => {
     const existingIdentifier = id("existing-colliding-row");
     const collisionSource = id("coll-src");
     const collisionSourceId = id("coll-sid");
@@ -368,6 +393,11 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       }),
     ]);
 
+        await upsertInstruments([rawRow({
+      jurisdictionCode: fedCode, identifier: id("other-existing-row"),
+      source: id("other-source"), sourceId: id("other-source-id"),
+    })]);
+
     // Chunk 1 has INGEST_CHUNK_SIZE rows
     const chunk1Rows = Array.from({ length: INGEST_CHUNK_SIZE }, (_, i) =>
       rawRow({
@@ -376,9 +406,9 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       })
     );
 
-    // Chunk 2: first row is valid, last row violates (source, sourceId) against existingIdentifier
+    // Chunk 2 migrates a different source row onto an already occupied identity.
     const chunk2GoodIdentifier = id("chunk2-good");
-    const chunk2BadIdentifier = id("chunk2-bad");
+    const chunk2BadIdentifier = existingIdentifier;
     const chunk2Rows = [
       rawRow({
         jurisdictionCode: fedCode,
@@ -389,8 +419,8 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
       rawRow({
         jurisdictionCode: fedCode,
         identifier: chunk2BadIdentifier,
-        source: collisionSource,
-        sourceId: collisionSourceId,
+        source: id("other-source"),
+        sourceId: id("other-source-id"),
       }),
     ];
 
@@ -415,7 +445,8 @@ describe.skipIf(!hasTestDatabase)("upsertInstruments (Postgres)", () => {
     const chunk2BadCount = await prisma.instrument.count({
       where: { identifier: chunk2BadIdentifier },
     });
-    expect(chunk2BadCount).toBe(0);
+    expect(chunk2BadCount).toBe(1);
+    expect(await prisma.instrument.count({ where: { identifier: id("other-existing-row") } })).toBe(1);
   });
 
   it("stores Congress.gov mapper output end to end", async () => {

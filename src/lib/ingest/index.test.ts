@@ -1,19 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { findMany, upsert, $transaction } = vi.hoisted(() => ({
+const { findMany, sourceFindMany, update, upsert, $transaction } = vi.hoisted(() => ({
   findMany: vi.fn(),
+  sourceFindMany: vi.fn(),
+  update: vi.fn(),
   upsert: vi.fn(),
   $transaction: vi.fn(),
 }));
 
 const txClient = {
-  instrument: { upsert },
+  instrument: { upsert, findMany: sourceFindMany, update },
 };
 
 vi.mock("@/lib/db", () => ({
   prisma: {
     jurisdiction: { findMany },
-    instrument: { upsert },
+    instrument: { upsert, findMany: sourceFindMany, update },
     $transaction,
   },
 }));
@@ -36,7 +38,9 @@ const usRow: RawInstrument = {
 beforeEach(() => {
   vi.clearAllMocks();
   findMany.mockResolvedValue([{ id: "us-1", code: "US" }]);
-  upsert.mockResolvedValue({});
+  upsert.mockResolvedValue({ id: "created-1" });
+  sourceFindMany.mockResolvedValue([]);
+  update.mockResolvedValue({ id: "existing-1" });
   $transaction.mockImplementation(
     async (fn: (tx: typeof txClient) => Promise<unknown>) => fn(txClient)
   );
@@ -208,4 +212,15 @@ describe("upsertInstruments", () => {
 
     expect($transaction).toHaveBeenCalledTimes(2);
   });
+});
+
+
+it("looks up source pairs once per chunk and updates matching rows in place", async () => {
+  const rows = Array.from({ length: 51 }, (_, i) => ({ ...usRow, source: "legiscan", sourceId: String(i), identifier: `US-s22-AB${i}` }));
+  sourceFindMany.mockResolvedValueOnce([{ id: "existing-1", source: "legiscan", sourceId: "0" }]);
+  await upsertInstruments(rows);
+  expect(sourceFindMany).toHaveBeenCalledTimes(2);
+  expect(sourceFindMany.mock.calls[0][0].where.OR).toHaveLength(50);
+  expect(update).toHaveBeenCalledWith({ where: { id: "existing-1" }, data: expect.objectContaining({ identifier: "US-s22-AB0" }) });
+  expect(upsert).toHaveBeenCalledTimes(50);
 });
