@@ -7,6 +7,7 @@ const {
   getIssueTags,
   getDefaultComparisonCodes,
   getPublicFreshness,
+  countPublicInstruments,
 } = vi.hoisted(() => ({
   auth: vi.fn(),
   getJurisdictions: vi.fn(),
@@ -14,6 +15,7 @@ const {
   getIssueTags: vi.fn(),
   getDefaultComparisonCodes: vi.fn(),
   getPublicFreshness: vi.fn(),
+  countPublicInstruments: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth }));
@@ -23,12 +25,14 @@ vi.mock("@/lib/queries", () => ({
   getIssueTags,
   getDefaultComparisonCodes,
   getPublicFreshness,
+  countPublicInstruments,
   getInstrumentsForComparison: vi.fn(async () => []),
   getCellNotesForComparison: vi.fn(async () => []),
 }));
 
 import type { ReactElement, ReactNode } from "react";
 import { Dashboard } from "@/components/dashboard";
+import { EmptyTrackerNotice } from "@/components/empty-tracker-notice";
 import { PublicReadOnlyNote } from "@/components/public-readonly-note";
 import { StateHeatmap } from "@/components/state-heatmap";
 import Home from "./page";
@@ -88,6 +92,7 @@ describe("public comparison matrix page", () => {
     getJurisdictions.mockResolvedValue([]);
     getIssueTags.mockResolvedValue([]);
     getDefaultComparisonCodes.mockResolvedValue([]);
+    countPublicInstruments.mockResolvedValue(10);
     getPublicFreshness.mockResolvedValue({
       lastSuccessfulRunAt: null,
       lastSuccessfulSource: null,
@@ -115,6 +120,23 @@ describe("public comparison matrix page", () => {
     const tree = await Home({ searchParams: Promise.resolve({}) });
 
     expect(canEditProp(tree)).toBe(false);
+  });
+
+  it("explains an empty install instead of showing bare empty cells", async () => {
+    auth.mockResolvedValue(null);
+    countPublicInstruments.mockResolvedValue(0);
+
+    const tree = await Home({ searchParams: Promise.resolve({}) });
+
+    expect(findByType(tree, EmptyTrackerNotice)).not.toBeNull();
+  });
+
+  it("omits the empty-install notice once instruments are published", async () => {
+    auth.mockResolvedValue(null);
+
+    const tree = await Home({ searchParams: Promise.resolve({}) });
+
+    expect(findByType(tree, EmptyTrackerNotice)).toBeNull();
   });
 
   it("enables editing for a signed-in EDITOR", async () => {

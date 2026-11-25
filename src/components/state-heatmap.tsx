@@ -116,11 +116,12 @@ function StateTile({ summary, maxCount, onHover }: StateTileProps) {
   return (
     <Link
       href={compareUrl}
-      className="group block"
+      className="group block rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       style={{
         gridRow: pos.row + 1,
         gridColumn: pos.col + 1,
       }}
+      aria-label={`${summary.jurisdiction.name}: ${summary.relevantCount} relevant instrument${summary.relevantCount === 1 ? "" : "s"}, ${summary.pendingCount} proposed. Open the comparison view.`}
       onMouseEnter={() => onHover(summary)}
       onMouseLeave={() => onHover(null)}
       onFocus={() => onHover(summary)}
@@ -157,7 +158,7 @@ function TooltipPanel({ summary }: TooltipPanelProps) {
   if (!summary) {
     return (
       <div className="text-sm text-muted-foreground italic">
-        Hover over a state to see details
+        Hover over or focus a state to see details
       </div>
     );
   }
@@ -273,7 +274,9 @@ export function StateHeatmap({
             <CardTitle className="text-base">State Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <TooltipPanel summary={hovered} />
+            <div aria-live="polite" aria-atomic="true">
+              <TooltipPanel summary={hovered} />
+            </div>
           </CardContent>
         </Card>
       </div>

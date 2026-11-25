@@ -23,6 +23,9 @@ describe("isPublicPath", () => {
   it("treats the read-only pages as public", () => {
     expect(isPublicPath("/")).toBe(true);
     expect(isPublicPath("/heatmap")).toBe(true);
+    expect(isPublicPath("/bills")).toBe(true);
+    expect(isPublicPath("/instruments/abc")).toBe(true);
+    expect(isPublicPath("/api/export/instruments")).toBe(true);
     expect(isPublicPath("/sign-in")).toBe(true);
     expect(isPublicPath("/api/auth")).toBe(true);
     expect(isPublicPath("/api/auth/session")).toBe(true);
@@ -32,6 +35,7 @@ describe("isPublicPath", () => {
     // A prefix match on "/" would wrongly allow every path here.
     expect(isPublicPath("/triage")).toBe(false);
     expect(isPublicPath("/admin")).toBe(false);
+    expect(isPublicPath("/api/instruments")).toBe(false);
     expect(isPublicPath("/api/cell-notes")).toBe(false);
   });
 });
@@ -41,6 +45,11 @@ describe("middleware without a session cookie", () => {
     expect(isNext(middleware(request("/")))).toBe(true);
     expect(isNext(middleware(request("/heatmap")))).toBe(true);
     expect(isNext(middleware(request("/heatmap?scope=state")))).toBe(true);
+    expect(isNext(middleware(request("/bills?status=PASSED")))).toBe(true);
+    expect(isNext(middleware(request("/instruments/abc")))).toBe(true);
+    expect(isNext(middleware(request("/api/export/instruments?format=json")))).toBe(
+      true
+    );
   });
 
   it("allows the sign-in page and auth routes", () => {
@@ -59,9 +68,11 @@ describe("middleware without a session cookie", () => {
   });
 
   it("returns 401 for data APIs", () => {
-    const response = middleware(request("/api/cell-notes"));
-    expect(response.status).toBe(401);
-    expect(isNext(response)).toBe(false);
+    for (const pathname of ["/api/cell-notes", "/api/instruments?jurisdictionIds=j1"]) {
+      const response = middleware(request(pathname));
+      expect(response.status).toBe(401);
+      expect(isNext(response)).toBe(false);
+    }
   });
 });
 
