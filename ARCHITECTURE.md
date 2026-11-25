@@ -80,7 +80,7 @@ New users default to `READER`.
 
 ## Key Design Decisions
 
-- **Public read + signed-in editors:** Anyone — signed in or not — can read the comparison matrix and the 50-state heatmap. Write routes stay behind a session, and editor actions require the `EDITOR` role.
+- **Public read + signed-in editors:** Anyone — signed in or not — can read the bill list and instrument detail pages, the comparison matrix, the 50-state heatmap, and the CSV/JSON export. All of them read only `triageStatus = RELEVANT` rows. Write routes stay behind a session, and editor actions require the `EDITOR` role.
 - **Machine tracking, human analysis:** APIs fetch bill/status data. Only editors (humans) tag Title IX relevance and write comparison notes.
 - **Extensible schema, not extensible enum:** `InstrumentType` is a Prisma enum. Adding new types requires a migration. The schema is designed to support future types (guidance, executive orders, court orders) but they must be added explicitly.
 - **Matrix UX:** Rows = issue tags, columns = user-selected jurisdictions (2–8), cells = current rule + pending instruments + source citations.
@@ -90,8 +90,9 @@ New users default to `READER`.
 1. Ingest adapters (Congress.gov, LegiScan, OpenStates, etc.) fetch instrument data
 2. Frontier/human editors triage new instruments for Title IX relevance
 3. Editors write cell notes comparing jurisdictions on each issue
-4. Anyone — signed in or not — reads the comparison matrix and the 50-state
-   heatmap; write routes stay behind a session
+4. Anyone — signed in or not — browses the bill list and instrument details,
+   reads the comparison matrix and the 50-state heatmap, and downloads the
+   public dataset; write routes stay behind a session
 
 The heatmap exists: `(public)/heatmap/page.tsx` renders
 `src/components/state-heatmap.tsx` from `getHeatmapSummaries()` in
@@ -109,8 +110,31 @@ codes, then `src/lib/queries.ts` loads issue tags, Title IX-relevant
 instruments, and cell notes in parallel. The client selector only updates the
 URL; it does not fetch.
 
+The bill list lives at `(public)/bills/page.tsx`. `src/lib/bill-query.ts`
+parses the URL (`q`, `jurisdiction`, `status`, `type`, `sort`, `page`, `limit`)
+into a `BillQuery`; `billWhere()` pins `triageStatus: "RELEVANT"` and adds the
+filters; `billOrderBy()` keeps undated rows last on date sorts. The page is a
+plain GET form and server-rendered table, so search, filter, sort and paging
+work without client JavaScript. `getInstrumentListing()` in `src/lib/queries.ts`
+runs `count` and one paged `findMany`.
+
+Instrument detail is `(public)/instruments/[id]/page.tsx`.
+`getInstrumentDetail()` filters on `RELEVANT` as well, so an unreviewed id is a
+404. The page renders dates, issue areas, provenance (`source`, `sourceId`,
+`lastCheckedAt`) and the source summary explicitly labelled unverified.
+Editor instrument notes are rendered only for `EDITOR`/`ADMIN`.
+
 List APIs (`GET /api/instruments`, `GET /api/cell-notes`) use the same query
 helpers. They require `jurisdictionIds` (max 8) and never dump the full table.
+
+`GET /api/export/instruments` (`format=csv|json`) is public and shares
+`billWhere()` with the list page. It never issues an unbounded query:
+`getInstrumentExportRows()` applies `take: MAX_EXPORT_ROWS` (1,000) and returns
+the unbounded match count so the response can set `truncated` /
+`X-Result-Truncated`. CSV uses RFC 4180 quoting and a UTF-8 BOM; both formats
+omit `triageStatus` and notes. `src/middleware.ts` lists `/bills`,
+`/instruments`, `/api/export` as public prefixes — the same anonymous data the
+comparison matrix already exposes.
 
 ## Write Path
 

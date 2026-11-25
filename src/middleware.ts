@@ -11,7 +11,20 @@ import { NextResponse, type NextRequest } from "next/server";
  * database (Prisma adapter), and the edge runtime cannot reach it.
  */
 
-const PUBLIC_PREFIXES = ["/sign-in", "/heatmap", "/api/auth"];
+/**
+ * Prefixes readable without a session. `/bills`, `/instruments/*` and the
+ * export route only read `triageStatus = RELEVANT` rows, the same rows the
+ * comparison matrix already shows anonymously, so they add no new exposure.
+ * Intermediate notes stay behind the editor guards.
+ */
+const PUBLIC_PREFIXES = [
+  "/sign-in",
+  "/heatmap",
+  "/bills",
+  "/instruments",
+  "/api/export",
+  "/api/auth",
+];
 
 /**
  * Exact paths that are public. The comparison matrix lives at `/`, so this is
