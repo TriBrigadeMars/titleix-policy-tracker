@@ -43,6 +43,7 @@ export interface Instrument {
   effectiveAt: string | null;
   sourceUrl: string | null;
   rawSummary: string | null;
+  lastCheckedAt: string | null;
   relevanceConfidence: number | null;
   jurisdiction: Jurisdiction;
   issueTags: { issueTag: IssueTag }[];
