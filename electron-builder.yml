@@ -72,11 +72,14 @@ linux:
   synopsis: Track proposed and passed laws impacting Title IX across the United States.
   maintainer: Title IX Policy Tracker Maintainers <maintainers@titleixpolicytracker.org>
   executableName: titleix-policy-tracker
+  # Electron derives the Linux app_id / WM_CLASS from `desktopName` in
+  # package.json. Syncing the .desktop filename to it lets GNOME/KDE associate
+  # the running window with the launcher entry (taskbar icon and grouping).
+  syncDesktopName: true
   desktop:
     entry:
       Name: Title IX Policy Tracker
       Comment: Track proposed and passed laws impacting Title IX across the United States.
-      Categories: Office;Education;Database;
       StartupWMClass: titleix-policy-tracker
   target:
     - target: AppImage
@@ -144,5 +147,12 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Title IX Policy Tracker
+  # Per-user install: no UAC prompt, and the PGlite database under %APPDATA%
+  # stays scoped to the installing account.
+  perMachine: false
+  # Deliberate: the uninstaller removes program files but keeps
+  # %APPDATA%\titleix-policy-tracker (database, notes, window state) so a
+  # reinstall does not discard the user's work. Documented in docs/INSTALL.md.
+  deleteAppDataOnUninstall: false
 
 artifactName: "TitleIX-Policy-Tracker-${version}-${os}-${arch}.${ext}"

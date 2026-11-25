@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ensurePrivateDir,
+  resolveConfigDir,
   resolveDataDir,
   resolveRuntimeDir,
   resolveSocketPath,
@@ -71,6 +72,56 @@ describe("local-runtime XDG paths & 0700 permissions", () => {
     ensurePrivateDir(tmp, "linux");
     const mode = fs.statSync(tmp).mode & 0o777;
     expect(mode).toBe(0o700);
+  });
+});
+
+// Windows is not executed on the Linux CI runner, but these functions take the
+// platform as an argument, so the Windows contract is asserted here and by the
+// windows-latest CI job.
+describe("Windows named pipe & %APPDATA% paths", () => {
+  it("uses a per-user named pipe, never a TCP port", () => {
+    expect(resolveSocketPath({ USERNAME: "alice" }, "win32")).toBe(
+      "\\\\.\\pipe\\titleix-policy-tracker-alice"
+    );
+    // Usernames can contain spaces/backslashes; the pipe name must not.
+    expect(resolveSocketPath({ USERNAME: "Alice Smith" }, "win32")).toBe(
+      "\\\\.\\pipe\\titleix-policy-tracker-Alice_Smith"
+    );
+    expect(resolveSocketPath({}, "win32")).toBe(
+      "\\\\.\\pipe\\titleix-policy-tracker-local"
+    );
+  });
+
+  it("honours TITLEIX_SOCKET_PATH and TITLEIX_DATA_DIR overrides on Windows", () => {
+    expect(
+      resolveSocketPath(
+        { TITLEIX_SOCKET_PATH: "\\\\.\\pipe\\custom", USERNAME: "alice" },
+        "win32"
+      )
+    ).toBe("\\\\.\\pipe\\custom");
+    expect(
+      resolveDataDir(
+        { TITLEIX_DATA_DIR: "D:\\tracker-data", APPDATA: "C:\\Users\\alice\\AppData\\Roaming" },
+        "win32",
+        "C:\\Users\\alice"
+      )
+    ).toBe("D:\\tracker-data");
+  });
+
+  it("stores data and config under %APPDATA%", () => {
+    const env = { APPDATA: "C:\\Users\\alice\\AppData\\Roaming" };
+    expect(resolveDataDir(env, "win32", "C:\\Users\\alice")).toBe(
+      path.join("C:\\Users\\alice\\AppData\\Roaming", "titleix-policy-tracker")
+    );
+    expect(resolveConfigDir(env, "win32", "C:\\Users\\alice")).toBe(
+      path.join("C:\\Users\\alice\\AppData\\Roaming", "titleix-policy-tracker")
+    );
+  });
+
+  it("falls back to <home>\\AppData\\Roaming when APPDATA is unset", () => {
+    expect(resolveDataDir({}, "win32", "C:\\Users\\alice")).toBe(
+      path.join("C:\\Users\\alice", "AppData", "Roaming", "titleix-policy-tracker")
+    );
   });
 });
 
