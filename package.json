@@ -22,6 +22,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed.ts --demo",
     "db:census": "tsx scripts/data-census.ts",
     "ingest:scheduled": "tsx scripts/ingest-scheduled.ts",
     "ingest:legiscan-capture": "tsx scripts/capture-legiscan-masterlist.ts",

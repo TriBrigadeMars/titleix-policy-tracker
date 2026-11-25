@@ -6,6 +6,17 @@ Track proposed and passed laws impacting Title IX across the United States.
 
 A legislative and regulatory impact tracker for researchers, advocates, and journalists. Compare proposed or recently passed laws, regulations, and policies at the state and federal level that impact Title IX.
 
+Public views need no account:
+- **Bills & regulations** (`/bills`) — search titles, summaries and bill numbers; filter by jurisdiction, status and type; sort and page through results.
+- **Instrument detail** (`/instruments/<id>`) — status, key dates, issue areas, ingest source, source record id, last-checked time, and a link to the primary source.
+- **Comparison matrix** (`/`) — jurisdiction × issue-area cells with editor-written comparisons.
+- **National heatmap** (`/heatmap`) — Title IX activity by state, linked into the comparison view.
+- **Download** — CSV or JSON of the filtered public dataset at `/api/export/instruments?format=csv|json`.
+
+Editor work (triage, tagging, notes) requires an account. Every public view
+shows only instruments an editor marked `RELEVANT`; triage notes stay behind
+the editor role.
+
 Runs in two modes from the same codebase:
 - **Hosted web app**: Next.js 15 App Router + PostgreSQL + Google OAuth (`npm run dev` / `npm run build`).
 - **Standalone desktop app** (Linux AppImage, Arch, Ubuntu, Fedora, Windows): embedded PGlite database in `$XDG_DATA_HOME/titleix-policy-tracker/`, custom `app://tracker` scheme over a `0700` Unix domain socket (`$XDG_RUNTIME_DIR/titleix-policy-tracker/app.sock`), single local user, no TCP port, no hosted server, and OS keyring ingest keys — with both Electron (`electron/`) and Rust/Tauri v2 (`src-tauri/`) shells.
@@ -73,7 +84,27 @@ database still gets the demo corpus on first launch.
 ```bash
 NODE_ENV=production npm run db:seed              # catalogue only
 NODE_ENV=production SEED_DEMO=1 npm run db:seed  # add demo rows
+npm run db:seed:demo                             # same, cross-platform (incl. PowerShell)
 ```
+
+`npm run db:seed:demo` passes `--demo` to the seed script, so it works where
+inline environment variables do not. When the database has no published
+instruments, `/`, `/bills` and `/heatmap` say so and point at this command.
+
+## Public dataset export
+
+`GET /api/export/instruments` returns the same rows as `/bills`, using the same
+query parameters (`q`, `jurisdiction`, `status`, `type`, `sort`).
+
+```bash
+curl -O 'http://localhost:3000/api/export/instruments?format=csv&status=PASSED'
+curl 'http://localhost:3000/api/export/instruments?format=json&jurisdiction=CA' | jq .
+```
+
+CSV is RFC 4180 with a UTF-8 BOM (Excel on Windows) and ISO-8601 timestamps.
+JSON carries `generatedAt`, `count`, `truncated` and the records. A response is
+capped at 1,000 rows; `truncated` (and `X-Result-Truncated`) says whether the cap
+cut the result. The endpoint is read-only and exposes no notes or triage state.
 
 ## Standalone Linux Desktop & AppImage
 
@@ -103,6 +134,7 @@ npm run tauri:build
 | `npm run db:generate` | Generate Prisma client |
 | `npm run db:migrate` | Run database migrations against `DATABASE_URL` |
 | `npm run db:seed` | Seed catalogue; demo corpus outside production or with `SEED_DEMO=1` |
+| `npm run db:seed:demo` | Seed catalogue and demo corpus (`--demo`; cross-platform) |
 | `npm run desktop:dist:appimage` | Build standalone Linux AppImage |
 | `npm run desktop:dist:linux` | Build Linux AppImage, `pacman`, `deb`, and `rpm` packages |
 | `npm run tauri:build` | Build standalone Rust/Tauri v2 desktop bundles |

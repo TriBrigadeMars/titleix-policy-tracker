@@ -23,11 +23,20 @@ async function main() {
   console.log(
     `Seeded ${JURISDICTIONS_CATALOG.length} jurisdictions, ${ISSUE_TAGS_CATALOG.length} issue tags.`
   );
-  if (process.env.SEED_DEMO === "1" || process.env.NODE_ENV !== "production") {
+  // `--demo` is the cross-platform equivalent of SEED_DEMO=1 (PowerShell has no
+  // inline env prefix), used by `npm run db:seed:demo`.
+  const wantsDemo =
+    process.argv.includes("--demo") ||
+    process.env.SEED_DEMO === "1" ||
+    process.env.NODE_ENV !== "production";
+
+  if (wantsDemo) {
     const result = await seedDemoCorpus(prisma, loadDemoCorpus());
     console.log(`Demo corpus: ${result.instruments} instruments, ${result.cellNotes} cell notes (existing rows preserved).`);
   } else {
-    console.log("Demo corpus skipped in production; set SEED_DEMO=1 to install it.");
+    console.log(
+      "Demo corpus skipped in production; run `npm run db:seed:demo` or set SEED_DEMO=1 to install it."
+    );
   }
 }
 
