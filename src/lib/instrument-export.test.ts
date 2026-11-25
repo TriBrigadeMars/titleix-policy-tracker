@@ -58,6 +58,13 @@ function makeInstrument(overrides: Partial<Instrument> = {}): Instrument {
 }
 
 describe("csvEscape", () => {
+  it("neutralises spreadsheet formula triggers from external titles", () => {
+    expect(csvEscape("=HYPERLINK(\"http://x\")")).toBe("\"'=HYPERLINK(\"\"http://x\"\")\"");
+    expect(csvEscape("@SUM(A1)")).toBe("'@SUM(A1)");
+    expect(csvEscape("-1")).toBe("'-1");
+    expect(csvEscape("H.B. 1234")).toBe("H.B. 1234");
+  });
+
   it("leaves simple values alone", () => {
     expect(csvEscape("CA")).toBe("CA");
     expect(csvEscape(null)).toBe("");

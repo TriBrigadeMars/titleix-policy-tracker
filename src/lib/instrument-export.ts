@@ -21,9 +21,14 @@ export const CSV_COLUMNS = [
   "summary",
 ] as const;
 
-/** RFC 4180 quoting: only fields with a delimiter, quote, or newline need it. */
+/**
+ * RFC 4180 quoting: only fields with a delimiter, quote, or newline need it.
+ * Titles and summaries come from external feeds, so a leading formula trigger
+ * is prefixed with `'` to stop spreadsheets from evaluating it (CWE-1236).
+ */
 export function csvEscape(value: unknown): string {
-  const text = value == null ? "" : String(value);
+  const raw = value == null ? "" : String(value);
+  const text = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   if (/[",\r\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
