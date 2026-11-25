@@ -36,16 +36,16 @@ describe("Electron shell paths on Windows", () => {
   it("stores data and config under %APPDATA%", () => {
     const env = { APPDATA: "C:\\Users\\alice\\AppData\\Roaming" };
     expect(resolveShellDataDir(env, "win32", "C:\\Users\\alice")).toBe(
-      path.join("C:\\Users\\alice\\AppData\\Roaming", "titleix-policy-tracker")
+      path.win32.join("C:\\Users\\alice\\AppData\\Roaming", "titleix-policy-tracker")
     );
     expect(resolveShellConfigDir(env, "win32", "C:\\Users\\alice")).toBe(
-      path.join("C:\\Users\\alice\\AppData\\Roaming", "titleix-policy-tracker")
+      path.win32.join("C:\\Users\\alice\\AppData\\Roaming", "titleix-policy-tracker")
     );
   });
 
   it("falls back to <home>\\AppData\\Roaming when APPDATA is unset", () => {
     expect(resolveShellDataDir({}, "win32", "C:\\Users\\alice")).toBe(
-      path.join("C:\\Users\\alice", "AppData", "Roaming", "titleix-policy-tracker")
+      path.win32.join("C:\\Users\\alice", "AppData", "Roaming", "titleix-policy-tracker")
     );
   });
 });
