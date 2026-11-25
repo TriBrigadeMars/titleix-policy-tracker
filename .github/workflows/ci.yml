@@ -45,3 +45,33 @@ jobs:
       - run: npm test
         env:
           TEST_DATABASE_URL: postgresql://test:test@localhost:5432/titleix_test
+
+  # Windows 11 is a supported install target, so a Windows-only regression in
+  # the app or the Electron shell must fail here rather than at release time.
+  # No Postgres service: TEST_DATABASE_URL is unset, so DB integration tests
+  # skip (the Windows desktop app never uses external Postgres anyway).
+  # Packaging runs in desktop-windows.yml; this job stays fast.
+  windows:
+    name: Windows (lint, typecheck, tests, build)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # Build-time placeholders only: `next build` and `prisma generate` need
+      # the variables to exist, and nothing connects to a database.
+      DATABASE_URL: postgresql://user:password@localhost:5432/build
+      AUTH_SECRET: ci-auth-secret
+      AUTH_GOOGLE_ID: dummy
+      AUTH_GOOGLE_SECRET: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run desktop:typecheck
+      - run: npm test
+      - run: npm run build

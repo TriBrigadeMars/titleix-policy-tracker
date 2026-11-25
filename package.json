@@ -2,6 +2,7 @@
   "name": "titleix-policy-tracker",
   "version": "1.0.0",
   "description": "Track proposed and passed laws impacting Title IX across the United States.",
+  "desktopName": "titleix-policy-tracker",
   "author": "Title IX Policy Tracker Maintainers <maintainers@titleixpolicytracker.org>",
   "homepage": "https://github.com/TriBrigadeMars/titleix-policy-tracker",
   "repository": {
@@ -22,6 +23,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:demo": "tsx prisma/seed.ts --demo",
     "db:census": "tsx scripts/data-census.ts",
     "ingest:scheduled": "tsx scripts/ingest-scheduled.ts",
     "ingest:legiscan-capture": "tsx scripts/capture-legiscan-masterlist.ts",
@@ -35,14 +37,16 @@
     "desktop:copy-assets": "node -e \"require('node:fs').copyFileSync('electron/offline.html','electron-dist/offline.html')\"",
     "desktop:dev": "concurrently -k \"npm run dev\" \"npm run desktop:compile && wait-on -t 60000 http://localhost:3000 && cross-env NODE_ENV=development electron electron-dist/main.js\"",
     "desktop:dev:local": "npm run build && npm run desktop:compile && npm run desktop:copy-assets && cross-env DESKTOP_MODE=local electron electron-dist/main.js",
-    "desktop:pack": "npm run build && npm run desktop:stage-local && npm run desktop:compile && npm run desktop:copy-assets && electron-builder --dir --publish never",
-    "desktop:dist:appimage": "npm run build && npm run desktop:stage-local && npm run desktop:compile && npm run desktop:copy-assets && electron-builder --linux AppImage --x64 --publish never",
-    "desktop:dist:linux": "npm run build && npm run desktop:stage-local && npm run desktop:compile && npm run desktop:copy-assets && electron-builder --linux AppImage pacman deb rpm --x64 --publish never",
-    "desktop:dist:win": "npm run build && npm run desktop:stage-local && npm run desktop:compile && npm run desktop:copy-assets && electron-builder --win --x64 --publish never",
+    "desktop:prepare": "npm run build && npm run desktop:stage-local && npm run desktop:compile && npm run desktop:copy-assets",
+    "desktop:pack": "npm run desktop:prepare && electron-builder --dir --publish never",
+    "desktop:dist:appimage": "npm run desktop:prepare && electron-builder --linux AppImage --x64 --publish never",
+    "desktop:dist:linux": "npm run desktop:prepare && electron-builder --linux AppImage pacman deb rpm --x64 --publish never",
+    "desktop:dist:win": "npm run desktop:prepare && electron-builder --win --x64 --publish never",
+    "desktop:smoke": "node scripts/smoke-local-server.mjs",
+    "desktop:verify-pack": "node scripts/verify-desktop-pack.mjs",
     "tauri:dev": "npx @tauri-apps/cli dev",
     "tauri:build": "npm run build && npm run desktop:stage-local && npx @tauri-apps/cli build",
-    "desktop:gate": "tsx scripts/measure-shell-gate.ts",
-    "desktop:verify-pack": "node scripts/verify-desktop-pack.mjs"
+    "desktop:gate": "tsx scripts/measure-shell-gate.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

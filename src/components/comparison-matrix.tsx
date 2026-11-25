@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -224,7 +225,14 @@ export function ComparisonMatrix({
                                   {inst.identifier}
                                 </span>
                               </div>
-                              <div className="mt-1 font-medium">{inst.title}</div>
+                              <div className="mt-1 font-medium">
+                                <Link
+                                  href={`/instruments/${inst.id}`}
+                                  className="underline-offset-4 hover:underline"
+                                >
+                                  {inst.title}
+                                </Link>
+                              </div>
                               {inst.sourceUrl && (
                                 <a
                                   href={inst.sourceUrl}

@@ -1,11 +1,18 @@
 # Standalone Desktop Architecture — Linux, AppImage, Local Mode & Rust Shell
 
+> **Scope.** This document describes the local runtime shared by both shells.
+> Only the **Electron** shell ships on Windows 11 (named pipe under
+> `%APPDATA%`); the **Rust/Tauri** shell is Linux-only. The decision and its
+> code evidence are in [DESKTOP-SHELLS.md](./DESKTOP-SHELLS.md); end-user
+> instructions are in [INSTALL.md](./INSTALL.md).
+
 ## Goals & Shipping Sequence
 
 1. **Linux support** across **Arch** (`pacman` + `packaging/arch/PKGBUILD`), **Ubuntu** (`deb`), and **Fedora** (`rpm`).
-2. **Downloadable AppImage** (`TitleIX-Policy-Tracker-<version>-linux-x64.AppImage`).
+2. **Downloadable AppImage** (`TitleIX-Policy-Tracker-<version>-linux-x86_64.AppImage`).
 3. **Standalone local desktop app**: no external browser, no TCP port (`0` listening TCP sockets), and no hosted server — powered by embedded **PGlite** + checked-in Prisma migrations over a `0700` Unix domain socket (`$XDG_RUNTIME_DIR/titleix-policy-tracker/app.sock`).
-4. **Rust / Tauri v2 shell** (`src-tauri/`): 1-to-1 port of the Electron shell behind a measured promotion gate (`npm run desktop:gate`).
+4. **Rust / Tauri v2 shell** (`src-tauri/`): Linux-only 1-to-1 port of the Electron shell behind a measured promotion gate (`npm run desktop:gate`).
+5. **Windows 11** via the Electron shell's NSIS installer (named pipe `\\.\pipe\titleix-policy-tracker-<user>`, data in `%APPDATA%\titleix-policy-tracker`).
 
 The hosted web application (Next.js + PostgreSQL + Google OAuth) remains completely intact alongside local desktop mode.
 
@@ -54,6 +61,11 @@ secret-tool store --label="Title IX LegiScan Key" \
 ```
 
 Both the Electron shell (`electron/keyring.ts`) and the Rust/Tauri shell (`src-tauri/src/keyring_env.rs`) read these exact Secret Service attributes at launch and pass them to the local server child process environment.
+
+**Windows:** the Electron shell does not read Windows Credential Manager yet;
+set the variables as user environment variables (`setx CONGRESS_GOV_API_KEY …`)
+before launching. Ingest is optional, so the app works fully without keys. See
+[INSTALL.md](./INSTALL.md#optional-ingest-api-keys-windows).
 
 ---
 

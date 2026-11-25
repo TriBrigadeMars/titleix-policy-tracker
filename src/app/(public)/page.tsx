@@ -1,7 +1,9 @@
 import { auth } from "@/lib/auth";
 import { Dashboard } from "@/components/dashboard";
 import { PublicReadOnlyNote } from "@/components/public-readonly-note";
+import { EmptyTrackerNotice } from "@/components/empty-tracker-notice";
 import {
+  countPublicInstruments,
   getCellNotesForComparison,
   getDefaultComparisonCodes,
   getInstrumentsForComparison,
@@ -47,7 +49,10 @@ export default async function Home({
   const canCompare = selected.length >= 2;
   const selectedIds = selected.map((j) => j.id);
 
-  const freshness = await getPublicFreshness();
+  const [freshness, publicInstrumentCount] = await Promise.all([
+    getPublicFreshness(),
+    countPublicInstruments(),
+  ]);
 
   const [issueTags, instruments, cellNotes] = canCompare
     ? await Promise.all([
@@ -60,6 +65,7 @@ export default async function Home({
   return (
     <>
       {!session?.user && <PublicReadOnlyNote />}
+      {publicInstrumentCount === 0 && <EmptyTrackerNotice />}
       <Dashboard
         canEdit={canEdit}
         jurisdictions={jurisdictions}

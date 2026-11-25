@@ -33,6 +33,17 @@ jobs:
       - run: npm test
       - run: npm run desktop:dist:linux
 
+      # Packaging contract (updater closure, no server code/secrets in the
+      # asar, local bundle present) — the same gate the Windows and release
+      # workflows run.
+      - name: Verify packaging contract
+        run: node scripts/verify-desktop-pack.mjs dist-desktop/linux-unpacked
+
+      # Starts the packaged app as Node, waits for READY, then GETs / over the
+      # Unix socket and asserts a rendered page. No X server needed.
+      - name: Smoke test packaged app
+        run: npm run desktop:smoke
+
       - name: Audit packaged bundle for leaked secrets
         run: |
           ! find dist-desktop/linux-unpacked -name ".env*" | grep -q .

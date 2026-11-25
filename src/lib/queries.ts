@@ -10,6 +10,12 @@ import type {
 } from "@/types";
 import type { UserRole } from "@/lib/roles";
 import type { TriageRelevanceFilter, UserListQuery } from "@/lib/search-params";
+import {
+  billOrderBy,
+  billWhere,
+  MAX_EXPORT_ROWS,
+  type BillQuery,
+} from "@/lib/bill-query";
 import { triageWhere } from "@/lib/triage";
 import type { Prisma } from "@prisma/client";
 
@@ -95,6 +101,7 @@ export function toInstrument(row: InstrumentRow): Instrument {
     effectiveAt: iso(row.effectiveAt),
     sourceUrl: row.sourceUrl,
     rawSummary: row.rawSummary,
+    lastCheckedAt: iso(row.lastCheckedAt),
     relevanceConfidence: row.relevanceConfidence,
     jurisdiction: toJurisdiction(row.jurisdiction),
     issueTags: row.issueTags.map((link) => ({
@@ -203,6 +210,79 @@ export async function getCellNotesForComparison(input: {
     include: cellNoteInclude,
   });
   return rows.map(toCellNote);
+}
+
+export interface InstrumentListing {
+  instruments: Instrument[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * The public bill list: relevant instruments only, filtered and paged. Reads
+ * are issued together; the embedded PGlite client rejects batch
+ * `$transaction([...])`, so this stays a `Promise.all`.
+ */
+export async function getInstrumentListing(
+  query: BillQuery
+): Promise<InstrumentListing> {
+  const where = billWhere(query);
+  const [total, rows] = await Promise.all([
+    prisma.instrument.count({ where }),
+    prisma.instrument.findMany({
+      where,
+      include: instrumentInclude,
+      orderBy: billOrderBy(query.sort),
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+  ]);
+
+  return {
+    instruments: rows.map(toInstrument),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+    totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
+  };
+}
+
+/**
+ * Export rows for the same filters, bounded by `MAX_EXPORT_ROWS`. `total` is
+ * the unbounded match count so callers can report truncation honestly.
+ */
+export async function getInstrumentExportRows(
+  query: BillQuery
+): Promise<{ instruments: Instrument[]; total: number }> {
+  const where = billWhere(query);
+  const [total, rows] = await Promise.all([
+    prisma.instrument.count({ where }),
+    prisma.instrument.findMany({
+      where,
+      include: instrumentInclude,
+      orderBy: billOrderBy(query.sort),
+      take: MAX_EXPORT_ROWS,
+    }),
+  ]);
+
+  return { instruments: rows.map(toInstrument), total };
+}
+
+/** One published instrument. Unreviewed and rejected rows are 404s. */
+export async function getInstrumentDetail(
+  id: string
+): Promise<Instrument | null> {
+  const row = await prisma.instrument.findFirst({
+    where: { id, triageStatus: "RELEVANT" },
+    include: instrumentWithNotesInclude,
+  });
+  return row ? toInstrument(row) : null;
+}
+
+export async function countPublicInstruments(): Promise<number> {
+  return prisma.instrument.count({ where: { triageStatus: "RELEVANT" } });
 }
 
 const FALLBACK_DEFAULT_STATE_CODES = ["CA", "TX"] as const;

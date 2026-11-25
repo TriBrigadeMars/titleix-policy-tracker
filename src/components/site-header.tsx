@@ -27,6 +27,12 @@ export async function SiteHeader() {
               Comparison
             </Link>
             <Link
+              href="/bills"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Bills
+            </Link>
+            <Link
               href="/heatmap"
               className="text-muted-foreground hover:text-foreground transition-colors"
             >

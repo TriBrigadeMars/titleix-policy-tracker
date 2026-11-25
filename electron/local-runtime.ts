@@ -5,6 +5,10 @@ import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 
+/** Join with the target platform's separator, not the host's, so paths resolved for another OS (and tests of them) are correct. */
+const pathFor = (platform: NodeJS.Platform) =>
+  platform === "win32" ? path.win32 : path.posix;
+
 const APP_SLUG = "titleix-policy-tracker";
 const AUTH_SESSION_COOKIE = "authjs.session-token";
 const SECURE_AUTH_SESSION_COOKIE = "__Secure-authjs.session-token";
@@ -15,9 +19,9 @@ export function resolveShellRuntimeDir(
   uid: number = typeof process.getuid === "function" ? process.getuid() : 1000
 ): string {
   if (platform !== "win32" && env.XDG_RUNTIME_DIR?.trim()) {
-    return path.join(env.XDG_RUNTIME_DIR.trim(), APP_SLUG);
+    return pathFor(platform).join(env.XDG_RUNTIME_DIR.trim(), APP_SLUG);
   }
-  return path.join(os.tmpdir(), `${APP_SLUG}-${uid}`);
+  return pathFor(platform).join(os.tmpdir(), `${APP_SLUG}-${uid}`);
 }
 
 export function resolveShellSocketPath(
@@ -32,7 +36,7 @@ export function resolveShellSocketPath(
     const user = (env.USERNAME || "local").replace(/[^a-zA-Z0-9_-]/g, "_");
     return `\\\\.\\pipe\\${APP_SLUG}-${user}`;
   }
-  return path.join(resolveShellRuntimeDir(env, platform, uid), "app.sock");
+  return pathFor(platform).join(resolveShellRuntimeDir(env, platform, uid), "app.sock");
 }
 
 export function resolveShellDataDir(
@@ -44,15 +48,15 @@ export function resolveShellDataDir(
     return env.TITLEIX_DATA_DIR.trim();
   }
   if (platform === "win32") {
-    const base = env.APPDATA?.trim() || path.join(homedir, "AppData", "Roaming");
-    return path.join(base, APP_SLUG);
+    const base = env.APPDATA?.trim() || pathFor(platform).join(homedir, "AppData", "Roaming");
+    return pathFor(platform).join(base, APP_SLUG);
   }
   if (platform === "darwin") {
-    return path.join(homedir, "Library", "Application Support", APP_SLUG);
+    return pathFor(platform).join(homedir, "Library", "Application Support", APP_SLUG);
   }
   const xdgData =
-    env.XDG_DATA_HOME?.trim() || path.join(homedir, ".local", "share");
-  return path.join(xdgData, APP_SLUG);
+    env.XDG_DATA_HOME?.trim() || pathFor(platform).join(homedir, ".local", "share");
+  return pathFor(platform).join(xdgData, APP_SLUG);
 }
 
 export function resolveShellConfigDir(
@@ -61,15 +65,15 @@ export function resolveShellConfigDir(
   homedir: string = os.homedir()
 ): string {
   if (platform === "win32") {
-    const base = env.APPDATA?.trim() || path.join(homedir, "AppData", "Roaming");
-    return path.join(base, APP_SLUG);
+    const base = env.APPDATA?.trim() || pathFor(platform).join(homedir, "AppData", "Roaming");
+    return pathFor(platform).join(base, APP_SLUG);
   }
   if (platform === "darwin") {
-    return path.join(homedir, "Library", "Application Support", APP_SLUG);
+    return pathFor(platform).join(homedir, "Library", "Application Support", APP_SLUG);
   }
   const xdgConfig =
-    env.XDG_CONFIG_HOME?.trim() || path.join(homedir, ".config");
-  return path.join(xdgConfig, APP_SLUG);
+    env.XDG_CONFIG_HOME?.trim() || pathFor(platform).join(homedir, ".config");
+  return pathFor(platform).join(xdgConfig, APP_SLUG);
 }
 
 export function ensureShellPrivateDir(

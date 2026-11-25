@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLink, Pencil } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CellNoteTarget } from "@/components/cell-note-editor";
@@ -70,7 +71,12 @@ export function MatrixCell({
                   </Badge>
                   <span className="font-mono text-xs">{inst.identifier}</span>
                 </div>
-                <div className="mt-1 font-medium">{inst.title}</div>
+                <Link
+                  href={`/instruments/${inst.id}`}
+                  className="mt-1 block font-medium underline-offset-4 hover:underline"
+                >
+                  {inst.title}
+                </Link>
                 {inst.sourceUrl && (
                   <a
                     href={inst.sourceUrl}

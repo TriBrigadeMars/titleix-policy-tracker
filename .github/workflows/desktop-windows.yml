@@ -1,0 +1,76 @@
+name: Desktop Windows (NSIS installer & packaged-app smoke)
+
+# Windows 11 is a supported install target. This workflow builds the real
+# unsigned NSIS installer on every push/PR, verifies the packaging contract and
+# proves the packaged app serves a page — so a Windows regression fails here,
+# not at a signed release (release.yml). It never publishes: installers are
+# uploaded as workflow artifacts only.
+on:
+  push:
+    branches: [main, "tribrigademars-*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  electron-windows:
+    name: Electron Windows (NSIS installer)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # Build-time placeholders only. Nothing is packaged and nothing connects
+      # to a database; the app runs on embedded PGlite at runtime.
+      DATABASE_URL: postgresql://user:password@localhost:5432/build
+      AUTH_SECRET: build-time-placeholder-not-a-secret
+      AUTH_GOOGLE_ID: build-time-placeholder
+      AUTH_GOOGLE_SECRET: build-time-placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run desktop:typecheck
+      - run: npm test
+
+      # `desktop:dist:win` builds the standalone local app (Next.js + PGlite),
+      # then electron-builder's assisted NSIS installer. Unsigned on purpose:
+      # signing needs the certificate secrets and is handled by release.yml.
+      - run: npm run desktop:dist:win
+
+      - name: Verify packaging contract
+        run: node scripts/verify-desktop-pack.mjs dist-desktop/win-unpacked
+
+      # Starts the packaged app as Node exactly like electron/local-runtime.ts,
+      # waits for READY, then GETs / over the named pipe and asserts a real
+      # page. Same script runs on Linux in desktop-linux.yml.
+      - name: Smoke test packaged app
+        run: npm run desktop:smoke
+
+      - name: Audit packaged bundle for leaked secrets
+        shell: pwsh
+        run: |
+          $unpacked = "dist-desktop\win-unpacked"
+          $leaks = Get-ChildItem -LiteralPath $unpacked -Recurse -Force -File |
+            Where-Object { $_.Name -like ".env*" }
+          if ($leaks) {
+            $leaks | ForEach-Object { Write-Host "LEAK: $($_.FullName)" }
+            throw "Packaged bundle contains .env files."
+          }
+          Write-Host "No .env files in the packaged bundle."
+
+      - name: Upload unsigned installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: titleix-windows-installer-unsigned-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            dist-desktop/*.exe
+            dist-desktop/*.blockmap
+            dist-desktop/*.yml
