@@ -9,17 +9,21 @@ Linux packaging and verification run in [`.github/workflows/desktop-linux.yml`](
 ```
 checkout → npm ci → prisma generate → lint → typecheck (web + desktop)
 → vitest → next build → stage-local-bundle → desktop:compile → electron-builder
-→ secret-free bundle audit → upload AppImage + pacman + deb + rpm
+→ verify-desktop-pack → packaged-app smoke → secret-free bundle audit
+→ upload AppImage + pacman + deb + rpm
 ```
 
-A parallel job compiles and tests (`cargo test`) the Rust/Tauri v2 shell in `src-tauri/` and builds its AppImage, `.deb`, and `.rpm` artifacts.
+A parallel job compiles and tests (`cargo test`) the Rust/Tauri v2 shell in `src-tauri/` and builds its AppImage, `.deb`, and `.rpm` artifacts. That shell is Linux-only — see [DESKTOP-SHELLS.md](./DESKTOP-SHELLS.md).
 
-Windows packaging runs in [`.github/workflows/release.yml`](../.github/workflows/release.yml) on `windows-latest`, for `v*` tags and for `workflow_dispatch` (`dry_run: true` builds and verifies without publishing):
+Windows packaging has two entry points:
+
+- [`.github/workflows/desktop-windows.yml`](../.github/workflows/desktop-windows.yml) — on every push/PR. Builds the real (unsigned) NSIS installer, runs the packaging contract and the packaged-app smoke, and uploads the installer as a workflow artifact so a stranger can install without waiting for a signed release.
+- [`.github/workflows/release.yml`](../.github/workflows/release.yml) on `windows-latest`, for `v*` tags and for `workflow_dispatch` (`dry_run: true` builds and verifies without publishing):
 
 ```
 checkout → npm ci → prisma generate → lint → typecheck (web + desktop)
 → vitest → next build → stage-local-bundle → desktop:compile → electron-builder (NSIS)
-→ [signature check, when signed] → verify-desktop-pack → local server smoke
+→ [signature check, when signed] → verify-desktop-pack → packaged-app smoke
 → checksums → upload artifacts → [publish, signed tag pushes only]
 ```
 
@@ -39,7 +43,7 @@ The Windows installer ships the same standalone local app as the Linux packages.
   - `app.asar` contains server code (Next.js, React, Prisma, next-auth) or secret names (`DATABASE_URL`, `AUTH_SECRET`, ingest API keys) — these rules apply to `app.asar` only, because `resources/local-bundle` legitimately contains Next.js and Prisma;
   - the packed entry point is not `electron-dist/main.js`;
   - `resources/local-bundle/local-server-entry.cjs`, `resources/local-bundle/.next/required-server-files.json`, or the bundle's `node_modules/next` / `node_modules/@prisma/client` is missing.
-- **Local server smoke** (release.yml, PowerShell): runs `dist-desktop\win-unpacked\Title IX Policy Tracker.exe resources\local-bundle\local-server-entry.cjs` with `ELECTRON_RUN_AS_NODE=1`, a temporary `TITLEIX_DATA_DIR`, a `\\.\pipe\titleix-smoke-<run id>` named pipe and no `DATABASE_URL` (matching the child environment `electron/local-runtime.ts` builds), and fails the job unless the server prints `READY` within 60 seconds.
+- **Packaged-app smoke** (`npm run desktop:smoke`, `scripts/smoke-local-server.mjs`): runs the packaged executable as Node (`ELECTRON_RUN_AS_NODE=1`) with a temporary `TITLEIX_DATA_DIR`, a per-run endpoint (`\\.\pipe\titleix-smoke-…` on Windows, a temp `.sock` on Linux) and no `DATABASE_URL`, waits for the server to print `READY`, then performs an authenticated `GET /` **over that endpoint** and fails unless the response is HTTP 200 and contains the rendered app. This runs on Linux (`desktop-linux.yml`), on Windows (`desktop-windows.yml`, `release.yml`) and is covered by `scripts/smoke-local-server.test.ts`. The earlier PowerShell smoke only checked for `READY`; a request to that server without `AUTH_SECRET` returns HTTP 500, so the request assertion is what actually protects a first launch.
 
 ## Deferred Item 4 — Clean-VM / distro lifecycle verification
 
