@@ -102,3 +102,72 @@ Items 1–6. Constraints honored:
 `npm run lint`, `npm run build`, then exercise `/bills`, a filtered query,
 `/instruments/<id>` and both export formats against the dev server with the
 seeded PGlite corpus.
+
+## 5. Result (implementation)
+
+Late audit correction: `src/middleware.ts` gated every path except `/`,
+`/heatmap`, `/sign-in` and `/api/auth`. The "public read-only" comparison and
+heatmap were anonymous, but a new list/detail/export would have redirected to
+sign-in. Since those pages read the same `RELEVANT` rows the matrix already
+shows, `/bills`, `/instruments` and `/api/export` were added to the public
+prefix set. `/api/instruments` and `/api/cell-notes` stay behind auth.
+
+Shipped:
+
+- `src/lib/bill-query.ts` — URL parsing with bounds, `billWhere()` predicates
+  (`triageStatus: "RELEVANT"` always), `billOrderBy()` with undated rows last,
+  filter/page URL builders.
+- `src/lib/instrument-export.ts` — RFC 4180 CSV (UTF-8 BOM, quoted fields, ISO
+  timestamps) and the JSON payload mapping.
+- `src/lib/freshness.ts` + `src/lib/sources.ts` — summary/warning computation
+  and adapter display names.
+- `src/lib/queries.ts` — `getInstrumentListing`, `getInstrumentExportRows`
+  (1,000-row cap), `getInstrumentDetail` (RELEVANT only), `countPublicInstruments`;
+  `Instrument.lastCheckedAt` exposed.
+- `src/app/(public)/bills/page.tsx` — server-rendered GET form, table,
+  pagination, counts, export links, three empty states.
+- `src/app/(public)/instruments/[id]/page.tsx` — dates, issue links,
+  provenance, unverified source summary, editor-only notes, 404 for unpublished.
+- `src/app/api/export/instruments/route.ts` — public CSV/JSON, attachment
+  headers, `X-Total-Count`, `X-Result-Truncated`.
+- Heatmap accessible names and `aria-live` details; branded 404; empty-install
+  notice on `/`, `/bills`, `/heatmap`; Bills nav item; matrix titles link to
+  detail pages.
+- `npm run db:seed:demo` (`--demo` flag) for PowerShell-usable demo seeding.
+- Tests: `bill-query` (17), `instrument-export` (8), `freshness` (7),
+  `sources` (3), export route (6), middleware (+3), public page (+2).
+
+Rejected as planned: tsvector search, RSS/alerts, status history, saved filters.
+
+## 6. Verification (actual)
+
+Commands run in this worktree after the final commit contents:
+
+```
+npm ci            -> added 750 packages
+npm run db:generate -> Generated Prisma Client (v6.19.3)
+npm run typecheck -> pass (tsc --noEmit, no output)
+npm test          -> 50 files passed | 5 skipped; 646 tests passed | 29 skipped
+npm run lint      -> No ESLint warnings or errors
+npm run build     -> pass; 20 routes incl. /bills and /instruments/[id]
+```
+
+Runtime smoke against `next dev` with the embedded PGlite demo corpus:
+
+| Request | Result |
+|---|---|
+| `/` | 200 |
+| `/bills` | 200, "Showing 1–10 of 10" |
+| `/bills?q=athletics&status=PASSED&sort=oldest` | 200, 1 result |
+| `/bills?limit=3&page=2` | 200, "Showing 4–6 of 10", prev/next links |
+| `/bills?q=zzzz` | 200, no-match empty state |
+| `/instruments/<id>` | 200, provenance + "Not recorded" dates |
+| `/instruments/nope` | 404 |
+| `/api/export/instruments?format=csv` | 200, BOM + 10 rows |
+| `/api/export/instruments?format=csv&jurisdiction=CA` | 2 rows |
+| `/api/export/instruments?format=json&jurisdiction=CA&q=athletics` | count 1 |
+| `/api/export/instruments?format=pdf` | 400 |
+
+Windows was not executed locally; the only Windows-relevant change is the
+cross-platform `--demo` seed flag and server-rendered GET form (no inline env
+vars, no shell scripts).
